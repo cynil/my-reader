@@ -1,0 +1,68 @@
+name: 构建书架并部署到 GitHub Pages
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write      # 用于把 books.json / covers 提交回仓库
+  pages: write         # 发布 Pages
+  id-token: write      # deploy-pages 需要
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 准备 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 扫描 books/ 生成清单与封面
+        run: node scripts/build-library.mjs
+
+      - name: 把清单与封面提交回仓库
+        # 即使分支保护等原因导致 push 失败，也不要挡住部署（站点照样是最新的）
+        continue-on-error: true
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add books.json covers
+          if git diff --cached --quiet; then
+            echo "清单没有变化，跳过提交"
+          else
+            git commit -m "chore(书架): 自动更新清单与封面 [skip ci]"
+            git push
+          fi
+
+      - name: 组装站点目录
+        run: |
+          mkdir -p _site
+          cp -r index.html assets books covers books.json .nojekyll _site/
+
+      - name: 配置 Pages
+        uses: actions/configure-pages@v5
+
+      - name: 上传站点产物
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: 发布
+        id: deploy
+        uses: actions/deploy-pages@v4

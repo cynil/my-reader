@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-site="auto">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#f4f2ee" />
+<meta name="description" content="纯静态的网页 EPUB 阅读器：书籍直接放在仓库里，push 之后书架自动更新。" />
+<title>书架 · EPUB Reader</title>
+<link rel="stylesheet" href="./assets/app.css" />
+<link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
+</head>
+<body>
+
+<div class="app" id="app">
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H11a2 2 0 0 1 2 2v14a1.6 1.6 0 0 0-1.6-1.6H5.5A1.5 1.5 0 0 1 4 15.9V4.5Z"/>
+        <path d="M20 4.5A1.5 1.5 0 0 0 18.5 3H13a2 2 0 0 0-2 2v14a1.6 1.6 0 0 1 1.6-1.6h5.9A1.5 1.5 0 0 0 20 15.9V4.5Z"/>
+      </svg>
+      <div class="brand-text">
+        <h1>我的书架</h1>
+        <p id="libraryMeta">正在载入…</p>
+      </div>
+    </div>
+
+    <div class="topbar-tools">
+      <label class="search" for="searchInput">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+        <input id="searchInput" type="search" placeholder="搜索书名 / 作者" autocomplete="off" spellcheck="false" aria-label="搜索书名或作者" />
+      </label>
+
+      <div class="select-wrap">
+        <select id="sortSelect" aria-label="排序方式">
+          <option value="added">最近添加</option>
+          <option value="title">书名</option>
+          <option value="author">作者</option>
+          <option value="progress">阅读进度</option>
+        </select>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
+      </div>
+
+      <button class="icon-btn" id="refreshBtn" title="重新载入书架" aria-label="重新载入书架">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.6 6.1"/><path d="M20 5v6h-6"/></svg>
+      </button>
+
+      <button class="icon-btn" id="siteThemeBtn" title="切换外观" aria-label="切换外观">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="library">
+    <div class="grid" id="grid"></div>
+
+    <div class="empty" id="empty" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H11a2 2 0 0 1 2 2v14a1.6 1.6 0 0 0-1.6-1.6H5.5A1.5 1.5 0 0 1 4 15.9V4.5Z"/>
+        <path d="M20 4.5A1.5 1.5 0 0 0 18.5 3H13a2 2 0 0 0-2 2v14a1.6 1.6 0 0 1 1.6-1.6h5.9A1.5 1.5 0 0 0 20 15.9V4.5Z"/>
+      </svg>
+      <h2 id="emptyTitle">书架还是空的</h2>
+      <p id="emptyText">把 <code>.epub</code> 文件放进仓库的 <code>books/</code> 目录，push 之后书架会自动更新。</p>
+      <pre><code>books/
+└─ 我的书.epub</code></pre>
+      <p class="hint">生成清单：<code>node scripts/build-library.mjs</code></p>
+    </div>
+  </main>
+
+  <footer class="sitefoot" id="siteFoot"></footer>
+</div>
+
+
+<section class="reader" id="reader" data-rt="paper" hidden>
+  <div class="reader-bar" id="readerBar">
+    <button class="icon-btn" id="backBtn" title="返回书架 (Esc)" aria-label="返回书架">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5l-7 7 7 7"/></svg>
+    </button>
+    <div class="reader-heading">
+      <strong id="readerTitle">—</strong>
+      <span id="readerAuthor"></span>
+    </div>
+    <div class="reader-actions">
+      <button class="text-btn" id="tocBtn">目录</button>
+      <button class="text-btn" id="settingsBtn">Aa</button>
+    </div>
+  </div>
+
+  <div class="viewer" id="viewer"></div>
+
+  <div class="reader-foot" id="readerFoot">
+    <input type="range" id="progressSlider" min="0" max="1000" step="1" value="0" aria-label="阅读进度" disabled />
+    <div class="foot-meta">
+      <span id="progressLabel">0%</span>
+      <span class="foot-dot">·</span>
+      <span id="pageLabel">—</span>
+      <span class="spacer"></span>
+      <button class="icon-btn small" id="prevBtn" title="上一页 (←)" aria-label="上一页">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5l-7 7 7 7"/></svg>
+      </button>
+      <button class="icon-btn small" id="nextBtn" title="下一页 (→)" aria-label="下一页">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 5 7 7-7 7"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <aside class="drawer drawer-left" id="tocDrawer" hidden aria-label="目录">
+    <div class="drawer-head">
+      <h2>目录</h2>
+      <button class="icon-btn" id="tocClose" aria-label="关闭目录">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <nav class="toc" id="tocList"></nav>
+  </aside>
+
+  <aside class="drawer drawer-right" id="settingsDrawer" hidden aria-label="阅读设置">
+    <div class="drawer-head">
+      <h2>阅读设置</h2>
+      <button class="icon-btn" id="settingsClose" aria-label="关闭设置">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+
+    <div class="setting">
+      <span class="setting-label">主题</span>
+      <div class="swatches" id="themeSwatches">
+        <button data-theme="paper" class="swatch swatch-paper" aria-label="纸白">纸白</button>
+        <button data-theme="sepia" class="swatch swatch-sepia" aria-label="护眼">护眼</button>
+        <button data-theme="night" class="swatch swatch-night" aria-label="夜间">夜间</button>
+      </div>
+    </div>
+
+    <div class="setting">
+      <span class="setting-label">字号</span>
+      <div class="stepper">
+        <button id="fontDown" aria-label="减小字号">A−</button>
+        <span id="fontValue">100%</span>
+        <button id="fontUp" aria-label="增大字号">A+</button>
+      </div>
+    </div>
+
+    <div class="setting">
+      <span class="setting-label">行距</span>
+      <div class="segmented" id="lineHeightGroup">
+        <button data-lh="1.5">紧凑</button>
+        <button data-lh="1.75">标准</button>
+        <button data-lh="2">宽松</button>
+      </div>
+    </div>
+
+    <div class="setting">
+      <span class="setting-label">字体</span>
+      <div class="segmented" id="fontFamilyGroup">
+        <button data-ff="serif">宋体</button>
+        <button data-ff="sans">黑体</button>
+      </div>
+    </div>
+
+    <div class="setting">
+      <span class="setting-label">翻页</span>
+      <div class="segmented" id="flowGroup">
+        <button data-flow="paginated">左右翻页</button>
+        <button data-flow="scrolled">上下滚动</button>
+      </div>
+    </div>
+
+    <button class="ghost-btn" id="resetSettings">恢复默认设置</button>
+  </aside>
+
+  <div class="scrim" id="scrim" hidden></div>
+
+  <div class="loading" id="loading" hidden>
+    <div class="spinner"></div>
+    <p id="loadingText">正在打开…</p>
+  </div>
+</section>
+
+<div class="toast" id="toast" hidden></div>
+
+<noscript>
+  <p style="padding:24px;font:16px/1.7 system-ui">这个阅读器需要 JavaScript 才能运行。</p>
+</noscript>
+
+<script src="./assets/vendor/jszip.min.js" defer></script>
+<script src="./assets/vendor/epub.min.js" defer></script>
+<script src="./assets/app.js" defer></script>
+</body>
+</html>
