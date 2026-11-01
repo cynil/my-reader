@@ -140,3 +140,27 @@ node scripts/serve.mjs
 - `books.json` 里的 `added` 字段会在重新生成时被保留，用来排序"最近添加"。
 - 封面会被裁剪成 `covers/<id>.<ext>`，原书删除后对应封面也会被清理。
 - 前端不打包、不转译，直接是浏览器能跑的 ES2017 + IIFE，改完刷新就生效。
+
+## 常见问题
+
+**`Get Pages site failed ... Error: Not Found`**
+
+仓库还没有开启 Pages。两种解法：
+
+1. 网页上开启：`Settings` → `Pages` → Source 选 **GitHub Actions**，然后回到 Action 点 `Re-run all jobs`；
+2. 什么都不做，用新版本工作流再 push 一次——里面的 `configure-pages` 带了 `enablement: true`，会自己把 Pages 站点建出来。
+
+两种都不行，通常是仓库是**私有**的（免费版 Pages 只支持公开仓库），或者所在组织禁用了 Pages。
+
+**Action 成功但页面 404**
+
+等 1～2 分钟，Pages 首次发布有延迟；确认 `Source` 选的是 GitHub Actions 而不是某个分支；确认地址是 `https://<用户名>.github.io/<仓库名>/`，别漏了仓库名。
+
+**页面能打开，但书架一直空**
+
+看看 `books.json` 是不是 `count: 0`——那就是 `books/` 里没有 `.epub`。放了书还是空的话，去 `Actions` 里看"扫描 books/"那一步的输出，文件可能超过 100 MB 被跳过了。
+
+**点开书一直转圈**
+
+打开浏览器控制台看报错。常见原因是 EPUB 本身损坏，或者用了固定版式（fixed-layout），换一本重排本试试。
+

@@ -50,6 +50,9 @@ jobs:
 
       - name: 配置 Pages
         uses: actions/configure-pages@v5
+        with:
+          # 仓库还没启用 Pages 时，让 Action 自己把站点建出来（需要 pages: write）
+          enablement: true
 
       - name: 上传站点产物
         uses: actions/upload-pages-artifact@v3
