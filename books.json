@@ -1,5 +1,16 @@
 {
-  "generatedAt": "2026-11-01T11:42:50.972Z",
-  "count": 0,
-  "books": []
+  "generatedAt": "2026-11-01T12:33:06.973Z",
+  "count": 1,
+  "books": [
+    {
+      "id": "713038156c99b527",
+      "title": "平凡的世界（激励亿万读者的新课标经典、改变马云一生的书、新晋男神朱一龙推荐）",
+      "author": "路遥",
+      "path": "books/平凡的世界 (路遥) (z-library.sk, 1lib.sk, z-lib.sk).epub",
+      "cover": "covers/713038156c99b527.jpg",
+      "size": 2508134,
+      "language": "zh",
+      "added": "2026-11-01T12:33:06.973Z"
+    }
+  ]
 }
