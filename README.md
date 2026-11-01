@@ -28,6 +28,7 @@
 ├── assets/
 │   ├── app.css                   # 样式（含浅色/深色、纸白/护眼/夜间）
 │   ├── app.js                    # 全部界面逻辑（无框架、无构建）
+│   ├── auth.js                   # 访问密钥验证器（null = 不启用门禁）
 │   ├── icon.svg
 │   └── vendor/
 │       ├── epub.min.js           # epub.js 0.3.93（已本地化，不走 CDN）
@@ -37,6 +38,7 @@
 ├── books.json                    # ← 自动生成的书目清单
 ├── scripts/
 │   ├── build-library.mjs         # 扫描书籍 + 解析 OPF + 提取封面（零依赖）
+│   ├── make-key.mjs              # 生成访问密钥验证器
 │   └── serve.mjs                 # 本地预览服务器（零依赖）
 └── .github/workflows/pages.yml   # 自动生成清单 + 部署 Pages
 ```
@@ -103,6 +105,52 @@ node scripts/serve.mjs
 打开 http://localhost:5173 。
 
 **不能直接双击 `index.html`**：`fetch('books.json')` 在 `file://` 协议下会被 CORS 拦掉。用上面的本地服务器，或者 `python -m http.server`、`npx serve` 都行。
+
+## 访问密钥（门禁）
+
+> ⚠️ **先说清楚它能做什么**：这只是**遮住界面**，不是加密。
+> `books/` 里的 `.epub` 仍然能被直链下载（`.../books/xxx.epub`）。
+> 它能挡住随手点进来的人、被转发的链接和搜索引擎；
+> 挡不住任何一个会按 F12 看网络请求的人。要真正保护文件，见下面「想要真保护」。
+
+### 生成密钥
+
+```bash
+node scripts/make-key.mjs "你的一句话密钥"
+git add assets/auth.js
+git commit -m "feat: 启用访问密钥"
+git push
+```
+
+- **明文密钥不进仓库**：`assets/auth.js` 里只有 `salt` 和 `PBKDF2-SHA256`（21 万轮）的哈希，反推不出密钥
+- 不想让密钥留在 shell 历史里：`echo "密钥" | node scripts/make-key.mjs -`
+- 只校验不写文件：`node scripts/make-key.mjs --verify "密钥"`
+- 关闭门禁：`node scripts/make-key.mjs --remove`
+- 更换密钥：重新生成一次即可，旧的「已解锁」记录会自动失效
+
+### 行为
+
+- 未解锁时**不加载 `books.json`**，书架是空的，路由也被挡住
+- 勾选「记住这台设备 7 天」存 `localStorage`；不勾则存 `sessionStorage`，关标签页即失效
+- 右上角锁形按钮可随时锁定（清掉本地解锁记录并刷新）
+- 连续输错 5 次锁定 10 秒
+- 启用后会注入 `noindex, nofollow`，避免被搜索引擎收录
+
+### 注意
+
+- `crypto.subtle` 只在 **HTTPS 或 localhost** 下可用。用 `http://192.168.x.x` 打开会提示"无法校验密钥"
+- 密钥是前端校验的，把 `assets/auth.js` 改回 `null` 再部署就能绕过——**它防的是"误闯"，不是"攻击"**
+- 用弱口令（`123456`）的话，哈希是可以被离线暴力破解的，请用 12 位以上的随机短语
+
+### 想要真保护？
+
+得把书本身加密，让服务器上只有密文：
+
+1. 构建时用 AES-GCM 加密每个 `books/*.epub`（密钥由口令经 PBKDF2 派生）
+2. 浏览器输入口令 → 解密成 `ArrayBuffer` → 直接交给 `ePub(arrayBuffer)`（epub.js 支持传二进制）
+3. 顺带把 `books.json` 里的书名、作者、封面也加密或移除
+
+代价是：书目信息要么公开、要么也加密（那书架就得先解密才知道有什么）；大书的解密要多花几百毫秒；而且密钥一旦换了，全部文件都要重新加密。需要的话可以在这个骨架上加，`books.json` 的契约不用动。
 
 ## 阅读器功能
 

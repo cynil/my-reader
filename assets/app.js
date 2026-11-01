@@ -224,6 +224,7 @@
     sort: 'added',
     ready: false,
     loadError: '',
+    started: false,
     pushedRoute: false,
     reading: null,   // { item, book, rendition, lastLoc, lastCfi, tocHrefs }
   };
@@ -945,11 +946,23 @@
     });
 
     document.addEventListener('keydown', (e) => {
+      if (document.body.classList.contains('locked')) return;
       if (state.reading) { onReaderKey(e); return; }
       if (e.key === '/' && document.activeElement !== searchInput) {
         e.preventDefault();
         searchInput.focus();
       }
+    });
+
+    // 门禁
+    lockForm.addEventListener('submit', handleUnlock);
+    lockBtn.addEventListener('click', () => {
+      try {
+        localStorage.removeItem(AUTH_STORE_KEY);
+        sessionStorage.removeItem(AUTH_STORE_KEY);
+      } catch (err) { /* noop */ }
+      if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+      location.reload();
     });
 
     // 阅读器
@@ -1054,11 +1067,216 @@
     }
   }
 
+  /* ---------------- 访问密钥（门禁） ----------------
+     注意：这只是「遮挡界面」，不是加密。books/ 里的 .epub 仍然是
+     公开可直接下载的。真正的保护需要把书本身加密，见 README。
+     -------------------------------------------------- */
+  const AUTH = (() => {
+    const cfg = window.READER_AUTH;
+    if (!cfg || typeof cfg !== 'object' || !cfg.salt || !cfg.hash) return null;
+    return {
+      salt: String(cfg.salt).replace(/[^0-9a-fA-F]/g, '').toLowerCase(),
+      hash: String(cfg.hash).replace(/[^0-9a-fA-F]/g, '').toLowerCase(),
+      iterations: Math.max(10000, Number(cfg.iterations) || 210000),
+    };
+  })();
+
+  const AUTH_STORE_KEY = 'epub-reader:unlock';
+  const AUTH_REMEMBER_DAYS = 7;
+  const AUTH_MAX_TRIES = 5;
+  const AUTH_COOLDOWN_MS = 10000;
+
+  const lockScreen = $('#lockScreen');
+  const lockForm = $('#lockForm');
+  const lockInput = $('#lockInput');
+  const lockRemember = $('#lockRemember');
+  const lockSubmit = $('#lockSubmit');
+  const lockMsg = $('#lockMsg');
+  const lockBtn = $('#lockBtn');
+
+  const textEncoder = new TextEncoder();
+  let authTries = 0;
+  let authCooldownUntil = 0;
+
+  function hexToBytes(hex) {
+    const clean = String(hex).replace(/[^0-9a-fA-F]/g, '');
+    const out = new Uint8Array(Math.floor(clean.length / 2));
+    for (let i = 0; i < out.length; i += 1) out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+    return out;
+  }
+
+  function bytesToHex(bytes) {
+    let hex = '';
+    for (let i = 0; i < bytes.length; i += 1) hex += bytes[i].toString(16).padStart(2, '0');
+    return hex;
+  }
+
+  async function sha256Hex(text) {
+    const buf = await window.crypto.subtle.digest('SHA-256', textEncoder.encode(text));
+    return bytesToHex(new Uint8Array(buf));
+  }
+
+  /** 验证器指纹：改了密钥后，旧的「已解锁」记录会自动失效 */
+  async function authFingerprint() {
+    return (await sha256Hex(`${AUTH.salt}:${AUTH.hash}`)).slice(0, 16);
+  }
+
+  async function deriveAuthHash(passphrase) {
+    const material = await window.crypto.subtle.importKey(
+      'raw',
+      textEncoder.encode(String(passphrase).normalize('NFKC')),
+      'PBKDF2',
+      false,
+      ['deriveBits']
+    );
+    const bits = await window.crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        salt: hexToBytes(AUTH.salt),
+        iterations: AUTH.iterations,
+        hash: 'SHA-256',
+      },
+      material,
+      256
+    );
+    return bytesToHex(new Uint8Array(bits));
+  }
+
+  function readUnlockToken() {
+    const boxes = [localStorage, sessionStorage];
+    for (let i = 0; i < boxes.length; i += 1) {
+      try {
+        const raw = boxes[i].getItem(AUTH_STORE_KEY);
+        if (!raw) continue;
+        const data = JSON.parse(raw);
+        if (data && typeof data.exp === 'number' && data.exp > Date.now()) return data;
+      } catch (err) { /* noop */ }
+    }
+    return null;
+  }
+
+  async function isUnlocked() {
+    if (!AUTH) return true;
+    const token = readUnlockToken();
+    if (!token) return false;
+    try {
+      return token.fp === (await authFingerprint());
+    } catch (err) {
+      return false;
+    }
+  }
+
+  async function writeUnlockToken(remember) {
+    const fp = await authFingerprint();
+    const ttl = remember ? AUTH_REMEMBER_DAYS * 86400000 : 12 * 3600000;
+    const payload = JSON.stringify({ fp, exp: Date.now() + ttl });
+    try {
+      const keep = remember ? localStorage : sessionStorage;
+      const drop = remember ? sessionStorage : localStorage;
+      keep.setItem(AUTH_STORE_KEY, payload);
+      drop.removeItem(AUTH_STORE_KEY);
+    } catch (err) { /* 隐私模式可能写不进去 */ }
+  }
+
+  function showLock() {
+    lockScreen.hidden = false;
+    document.body.classList.add('locked');
+    setTimeout(() => { try { lockInput.focus(); } catch (err) { /* noop */ } }, 80);
+  }
+
+  async function guard() {
+    if (!AUTH) return true;
+
+    lockBtn.hidden = false;
+
+    // 有门禁的站点不该被搜索引擎收录
+    const robots = document.createElement('meta');
+    robots.setAttribute('name', 'robots');
+    robots.setAttribute('content', 'noindex, nofollow');
+    document.head.appendChild(robots);
+
+    if (!window.crypto || !window.crypto.subtle) {
+      showLock();
+      lockInput.disabled = true;
+      lockSubmit.disabled = true;
+      lockMsg.textContent = '当前环境无法校验密钥：请用 HTTPS 或 localhost 打开';
+      return false;
+    }
+
+    if (await isUnlocked()) return true;
+
+    showLock();
+    return false;
+  }
+
+  async function handleUnlock(event) {
+    event.preventDefault();
+    if (!AUTH || lockSubmit.disabled) return;
+
+    const now = Date.now();
+    if (now < authCooldownUntil) {
+      lockMsg.textContent = `尝试次数过多，请 ${Math.ceil((authCooldownUntil - now) / 1000)} 秒后再试`;
+      return;
+    }
+
+    const passphrase = lockInput.value;
+    if (!passphrase) {
+      lockMsg.textContent = '请输入密钥';
+      lockInput.focus();
+      return;
+    }
+
+    lockSubmit.disabled = true;
+    lockSubmit.textContent = '校验中…';
+    lockMsg.textContent = '';
+
+    try {
+      const hash = await deriveAuthHash(passphrase);
+      if (hash !== AUTH.hash) throw new Error('bad-key');
+
+      await writeUnlockToken(lockRemember.checked);
+      lockInput.value = '';
+      lockMsg.classList.add('ok');
+      lockMsg.textContent = '密钥正确，正在进入…';
+      await startApp();
+    } catch (err) {
+      authTries += 1;
+      lockInput.value = '';
+      lockInput.focus();
+      lockForm.classList.remove('is-error');
+      void lockForm.offsetWidth;
+      lockForm.classList.add('is-error');
+
+      if (authTries >= AUTH_MAX_TRIES) {
+        authTries = 0;
+        authCooldownUntil = Date.now() + AUTH_COOLDOWN_MS;
+        lockMsg.textContent = `错误次数过多，请 ${AUTH_COOLDOWN_MS / 1000} 秒后再试`;
+      } else {
+        lockMsg.textContent = `密钥不正确，还可以试 ${AUTH_MAX_TRIES - authTries} 次`;
+      }
+    } finally {
+      lockSubmit.disabled = false;
+      lockSubmit.textContent = '进入书架';
+    }
+  }
+
   /* ---------------- 启动 ---------------- */
   async function init() {
     applySiteTheme();
     syncSettingsUI();
     bindEvents();
+
+    if (!(await guard())) return;
+    await startApp();
+  }
+
+  async function startApp() {
+    if (state.started) return;
+    state.started = true;
+
+    lockScreen.hidden = true;
+    document.body.classList.remove('locked');
+
     await loadLibrary();
 
     const routed = parseRoute();
