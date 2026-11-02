@@ -52,8 +52,11 @@ GitHub Actions        npm ci → npm run build → 部署 dist/ 到 Pages
 │   ├── components/             LockScreen / LibraryView / BookCard / ReaderView / TocPanel / SettingsPanel
 │   └── styles/app.css
 ├── scripts/
-│   ├── encrypt-books.mjs       ★ 唯一的构建前步骤：加密 sources/ → public/data/
-│   └── lib/epub.mjs            ZIP 中央目录 + OPF 解析（读取书名/作者/封面）
+│   ├── add-book.mjs            ★ 一条命令加书：复制 → 加密 → git add
+│   ├── encrypt-books.mjs       重新加密整个 sources/（也支持 --verify / --rotate）
+│   └── lib/
+│       ├── vault.mjs           加密核心逻辑（两个脚本共用）
+│       └── epub.mjs            ZIP 中央目录 + OPF 解析（读取书名/作者/封面）
 ├── public/
 │   ├── icon.svg
 │   └── data/                   ← 加密后的数据，可以公开
@@ -67,21 +70,53 @@ GitHub Actions        npm ci → npm run build → 部署 dist/ 到 Pages
 
 ## 加一本书
 
-```bash
-cp ~/Downloads/某本书.epub sources/
-npm run encrypt -- "你的口令"     # 重新加密（会跳过没变过的书）
-git add public/data
-git commit -m "add: 某本书"
+```powershell
+npm run add -- "D:\Downloads\新书.epub"
+```
+
+口令是交互输入的（不回显、不进 shell 历史）。它会依次做完：
+
+1. 复制进 `sources/`（同名同内容自动识别为重复，不会产生副本）
+2. 加密新增/变化的书，写出 `public/data`
+3. `git add public/data`
+
+然后你只需要：
+
+```powershell
+git commit -m "data: 加书"
 git push
 ```
 
-不想让口令进 shell 历史：
+一次加多本：
 
-```bash
-'你的口令' | node scripts/encrypt-books.mjs -
+```powershell
+npm run add -- 一本.epub 另一本.epub
 ```
 
-脚本会复用已有的盐和密钥参数，只加密新增/变化的书；删掉 `sources/` 里的书再跑一次，对应的密文也会被清掉。
+### 只重新加密（不加新书）
+
+```powershell
+npm run encrypt -- "你的口令"
+```
+
+脚本按内容哈希判断，没改过的书直接跳过；删掉 `sources/` 里的书再跑一次，对应密文会被清掉。
+
+### 口令记错了会怎样
+
+`npm run add` 会先拿你的口令去解现有的 `library.enc`：解不开就**直接中止，`public/data` 一个字节都不动**，并提示你确认口令。不会出现「口令打错、整个书库被新密钥重加密」这种灾难。
+
+确实要换口令（旧数据会全部重新加密）：
+
+```powershell
+npm run encrypt -- "新口令" --rotate
+```
+
+### 其他命令
+
+```powershell
+node scripts/encrypt-books.mjs --verify "口令"   # 只校验，不改文件
+'口令' | node scripts/encrypt-books.mjs -        # 口令走管道，不进 shell 历史
+```
 
 ## 本地开发
 

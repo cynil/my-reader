@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "add": "node scripts/add-book.mjs",
     "encrypt": "node scripts/encrypt-books.mjs"
   },
   "devDependencies": {
