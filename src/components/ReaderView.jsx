@@ -105,6 +105,26 @@ export default function ReaderView({ book, cryptoKey, onClose }) {
         });
         renditionRef.current = rendition;
 
+        // 一次物理点击可能被不止一个内容文档收到，所以时间锁必须跨文档共享，
+        // 否则两个文档各判一次：一个 "next"、一个 "prev"，互相抵消。
+        const DEBUG = /[?&]debug=1\b/.test(window.location.search);
+        let actionLock = 0;
+
+        const claim = () => {
+          const now = Date.now();
+          if (now - actionLock < 280) {
+            if (DEBUG) console.log('[reader] 忽略重复动作（距上次 %dms）', now - actionLock);
+            return false;
+          }
+          actionLock = now;
+          return true;
+        };
+
+        const turn = (dir) => {
+          if (!claim()) return;
+          if (dir > 0) goNext(); else goPrev();
+        };
+
         rendition.hooks.content.register((contents) => {
           injectCss(contents, themeCss(settingsRef.current));
 
@@ -117,24 +137,28 @@ export default function ReaderView({ book, cryptoKey, onClose }) {
           if (doc.__readerBound) return;
           doc.__readerBound = true;
 
-          const DEBUG = /[?&]debug=1\b/.test(window.location.search);
-          let turnLock = 0;
-
-          // 所有翻页手势共用冷却：同一手势被派发两次时只翻一页
-          const turn = (dir) => {
-            const now = Date.now();
-            if (now - turnLock < 280) {
-              if (DEBUG) console.log('[reader] 忽略重复翻页（距上次 %dms）', now - turnLock);
-              return;
-            }
-            turnLock = now;
-            if (dir > 0) goNext(); else goPrev();
-          };
-
           let sx = 0;
           let sy = 0;
           let st = 0;
           let moved = false;
+
+          // 判断这一帧是不是当前真正显示的那一页。
+          // epub.js 会同时保留多个内容文档，其中一个的 innerWidth 可能远大于
+          // iframe 自身的宽度（内容横向溢出），点到它就会算出完全错误的区域。
+          const pageWidth = () => {
+            try {
+              const frame = win.frameElement;
+              const rect = frame ? frame.getBoundingClientRect() : null;
+              if (!rect || !rect.width) return win.innerWidth || 0;
+              // 内容比帧宽（横向溢出）→ 不是可视页
+              if ((win.innerWidth || 0) - rect.width > 4) return 0;
+              // 帧本身比窗口还宽 → epub.js 预渲染的宽幅帧，不是当前页
+              if (rect.width > window.innerWidth + 4) return 0;
+              return rect.width;
+            } catch (err) {
+              return win.innerWidth || 0;
+            }
+          };
 
           doc.addEventListener('touchstart', (e) => {
             const t = e.changedTouches && e.changedTouches[0];
@@ -168,8 +192,11 @@ export default function ReaderView({ book, cryptoKey, onClose }) {
             const sel = win.getSelection ? win.getSelection() : null;
             if (sel && !sel.isCollapsed && String(sel).trim()) return;
 
-            const width = win.innerWidth || 0;
-            if (!width) return;
+            const width = pageWidth();
+            if (!width) {
+              if (DEBUG) console.log('[reader] 忽略非可视文档 innerWidth=%d', win.innerWidth);
+              return;
+            }
 
             const ratio = e.clientX / width;
             // 三等分：左 1/3 上一页、右 1/3 下一页、中间 1/3 切换工具栏。
@@ -177,12 +204,12 @@ export default function ReaderView({ book, cryptoKey, onClose }) {
             const zone = ratio < 1 / 3 ? 'prev' : ratio > 2 / 3 ? 'next' : 'toggle';
             if (DEBUG) {
               console.log('[reader] click x=%d width=%d ratio=%s zone=%s',
-                Math.round(e.clientX), width, ratio.toFixed(2), zone);
+                Math.round(e.clientX), Math.round(width), ratio.toFixed(2), zone);
             }
 
             if (zone === 'prev') turn(-1);
             else if (zone === 'next') turn(1);
-            else setChromeHidden((v) => !v);
+            else if (claim()) setChromeHidden((v) => !v);
           });
 
           // 鼠标滚轮翻页。只在左右翻页模式接管；上下滚动模式交还给浏览器。
