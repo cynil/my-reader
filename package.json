@@ -1,0 +1,22 @@
+{
+  "name": "my-reader",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "description": "加密书库的网页 EPUB 阅读器",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "encrypt": "node scripts/encrypt-books.mjs"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.2",
+    "vite": "^8.3.5"
+  },
+  "dependencies": {
+    "epubjs": "^0.3.93",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
+}

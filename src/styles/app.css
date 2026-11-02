@@ -921,3 +921,23 @@ html[data-site="dark"] .lock-submit { color: #1a1613; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
+
+/* ---------- Vite + React 版补充 ---------- */
+.brand-mark { display: inline-flex; align-items: center; justify-content: center; }
+
+.boot {
+  min-height: 100dvh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  padding: 28px;
+  text-align: center;
+  color: var(--text-dim);
+}
+.boot h2 { font-size: 18px; color: var(--text); }
+.boot-msg { color: var(--accent); font-size: 13.5px; }
+.boot-hint { max-width: 460px; font-size: 12.5px; line-height: 1.75; }
+
+.reader .loading p { text-align: center; padding: 0 20px; }
+.empty pre { white-space: pre-wrap; }

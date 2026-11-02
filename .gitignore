@@ -1,7 +1,12 @@
 # 依赖 / 构建产物
 node_modules/
-_site/
 dist/
+_site/
+.npm-cache/
+
+# 明文书籍：绝不提交（加密后的产物在 public/data/）
+sources/
+books/
 
 # 系统垃圾
 .DS_Store
@@ -16,5 +21,6 @@ npm-debug.log*
 .vscode/
 .idea/
 
-# 本地临时文件（保留 books/ 与 covers/ 里的 .gitkeep）
+# 本地临时文件
 *.tmp
+tmp-*
