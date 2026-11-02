@@ -5,8 +5,10 @@ _site/
 .npm-cache/
 
 # 明文书籍：绝不提交（加密后的产物在 public/data/）
-sources/
-books/
+# 注意：必须带前导 / 锚定到仓库根目录，
+# 否则 "books/" 会连 public/data/books/ 里的密文一起忽略掉。
+/sources/
+/books/
 
 # 系统垃圾
 .DS_Store

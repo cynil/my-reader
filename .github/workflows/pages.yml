@@ -1,8 +1,8 @@
 name: 构建并部署到 GitHub Pages
 
-# 新版不再由 CI 生成清单：加密发生在你本地（scripts/encrypt-books.mjs），
-# 仓库里只有密文，CI 只负责 npm run build + 发布。
-# 副作用：再也不会出现「CI 提交清单」和「本地提交清单」互相冲突的问题。
+# 加密发生在你本地（scripts/encrypt-books.mjs），仓库里只有密文；
+# CI 只负责 npm run build + 发布，不再往仓库里写任何文件，
+# 所以也不会再出现「CI 提交清单」和「本地提交清单」互相冲突的问题。
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read       # 只读，不需要再往仓库写东西
+  contents: read
   pages: write
   id-token: write
 
@@ -36,6 +36,22 @@ jobs:
 
       - name: 构建
         run: npm run build
+
+      - name: 校验数据文件已提交
+        # 挡住「本地有密文、但没进 git」：.gitignore 里的 books/
+        # 曾把 public/data/books/ 一起忽略，结果站点有封面、打开书却 404。
+        run: |
+          books=$(ls dist/data/books/*.bin 2>/dev/null | wc -l)
+          covers=$(ls dist/data/covers/*.bin 2>/dev/null | wc -l)
+          echo "密文书籍 $books 本，封面 $covers 个"
+          if [ ! -f dist/data/key.json ] || [ ! -f dist/data/library.enc ]; then
+            echo "::error::缺少 data/key.json 或 data/library.enc —— 先在本地跑 npm run encrypt，再提交 public/data"
+            exit 1
+          fi
+          if [ "$books" -lt 1 ]; then
+            echo "::error::dist/data/books 里没有密文。常见原因：public/data/books 被 .gitignore 误伤，或忘了 git add public/data"
+            exit 1
+          fi
 
       - name: 配置 Pages
         uses: actions/configure-pages@v5
