@@ -43,7 +43,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: dist
-          key: dist-${{ steps.code.outputs.key }}
+          # v2：v1 的缓存里混进了书库数据（cache 在 job 结束时才打包），换前缀重建
+          key: dist-v2-${{ steps.code.outputs.key }}
 
       - name: 准备 Node
         if: steps.dist.outputs.cache-hit != 'true'
@@ -95,6 +96,11 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+
+      - name: 清理产物再结束任务
+        # actions/cache 在 job 结束时才打包 dist。此时 artifact 已经上传完毕，
+        # 删掉 data 可以让缓存只保留代码产物（约 600 KB），不随书库体积增长。
+        run: rm -rf dist/data
 
   deploy:
     needs: build
