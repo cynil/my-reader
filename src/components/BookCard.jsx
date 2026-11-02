@@ -34,10 +34,18 @@ export default function BookCard({ book, cryptoKey, onOpen, index }) {
       aria-label={`打开《${book.title}》`}
     >
       <div className="card-cover">
-        <div className="cover-fallback"><span>{book.title}</span></div>
-        {coverUrl && !failed && (
-          <img src={coverUrl} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} />
-        )}
+        {/* 只有真的没有封面时才画文字占位，避免它盖住图片 */}
+        {!coverUrl || failed
+          ? <div className="cover-fallback"><span>{book.title}</span></div>
+          : (
+            <img
+              src={coverUrl}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              onError={() => setFailed(true)}
+            />
+          )}
         {pct >= 99.5 && <span className="card-done">已读完</span>}
         {pct > 0 && <div className="card-progress"><i style={{ width: `${pct.toFixed(1)}%` }} /></div>}
       </div>

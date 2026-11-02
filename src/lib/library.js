@@ -108,6 +108,17 @@ export async function fetchBookBuffer(key, book) {
 
 const coverCache = new Map();
 
+/** 从文件头猜图片类型：blob URL 带上正确的 MIME，Safari 之类才肯渲染 */
+function sniffImageType(bytes) {
+  const b = bytes;
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';
+  if (b.length >= 6 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return 'image/gif';
+  if (b.length >= 12 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'image/webp';
+  if (b.length >= 2 && b[0] === 0x3c) return 'image/svg+xml';
+  return 'image/jpeg';
+}
+
 /** 封面同样是密文，解密后转成 blob URL */
 export async function fetchCoverUrl(key, book) {
   if (!book.cover) return null;
@@ -115,10 +126,14 @@ export async function fetchCoverUrl(key, book) {
   try {
     const raw = await fetchBytes(dataFile(book.cover));
     const plain = await decryptBytes(key, raw, `cover:${book.id}`);
-    const url = URL.createObjectURL(new Blob([plain]));
+    const bytes = new Uint8Array(plain);
+    if (!bytes.length) throw new Error('解密结果为空');
+    const url = URL.createObjectURL(new Blob([plain], { type: sniffImageType(bytes) }));
     coverCache.set(book.id, url);
     return url;
   } catch (err) {
+    // 不要静默失败：封面是个独立的功能点，出错要能看见
+    console.warn(`[cover] ${book.id} 封面加载失败：`, err && err.message ? err.message : err);
     return null;
   }
 }
