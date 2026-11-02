@@ -13,6 +13,13 @@ import { KEYS, storage } from './storage.js';
 const BASE = import.meta.env.BASE_URL || './';
 const asset = (path) => new URL(`${BASE}${path}`, document.baseURI).toString();
 
+// 清单里存的是相对 data/ 的路径（books/x.bin、covers/y.bin），
+// 这里统一补上数据根目录，避免清单里出现部署结构。
+const dataFile = (path) => {
+  const p = String(path || '').replace(/^\.?\//, '');
+  return p.startsWith('data/') ? p : `data/${p}`;
+};
+
 export class BadKeyError extends Error {
   constructor(message = '口令不正确') {
     super(message);
@@ -91,7 +98,7 @@ export async function recallKey(params) {
 
 /** 取一本书并解密成 ArrayBuffer，直接交给 epub.js */
 export async function fetchBookBuffer(key, book) {
-  const raw = await fetchBytes(book.file);
+  const raw = await fetchBytes(dataFile(book.file));
   try {
     return await decryptBytes(key, raw, `book:${book.id}`);
   } catch (err) {
@@ -106,7 +113,7 @@ export async function fetchCoverUrl(key, book) {
   if (!book.cover) return null;
   if (coverCache.has(book.id)) return coverCache.get(book.id);
   try {
-    const raw = await fetchBytes(book.cover);
+    const raw = await fetchBytes(dataFile(book.cover));
     const plain = await decryptBytes(key, raw, `cover:${book.id}`);
     const url = URL.createObjectURL(new Blob([plain]));
     coverCache.set(book.id, url);
