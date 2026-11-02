@@ -49,7 +49,9 @@ npm run dev      # http://localhost:5173
 
 ### 部署
 
-推送到 `main` 后，GitHub Actions 执行 `npm ci && npm run build`，发布 `dist/` 到 Pages。
+推送到 `main` 后，GitHub Actions 发布 `dist/` 到 Pages。
+
+工作流按代码指纹缓存构建产物：只改 `public/data/`（加书）时跳过 `npm ci` 和 `vite build`，复用上次产物并注入新数据；改动 `src/`、`index.html`、依赖或构建配置时才重新构建。只修改 Markdown 不会触发工作流。
 
 仓库 Settings → Pages → Source 需选择 **GitHub Actions**。
 
