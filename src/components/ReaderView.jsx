@@ -153,6 +153,37 @@ export default function ReaderView({ book, cryptoKey, onClose }) {
             else if (e.clientX > width * 0.75) goNext();
             else setChromeHidden((v) => !v);
           });
+
+          // 鼠标滚轮翻页。只在左右翻页模式接管；上下滚动模式交还给浏览器。
+          let wheelAcc = 0;
+          let wheelLockUntil = 0;
+
+          doc.addEventListener('wheel', (e) => {
+            if (settingsRef.current.flow !== 'paginated') return;
+            if (e.ctrlKey || e.metaKey) return; // 保留浏览器缩放
+
+            const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+            const dy = e.deltaY * unit;
+            if (!dy) return;
+
+            const now = Date.now();
+            if (now < wheelLockUntil) {
+              e.preventDefault();
+              return;
+            }
+
+            wheelAcc += dy;
+            if (Math.abs(wheelAcc) < 60) {
+              e.preventDefault();
+              return;
+            }
+
+            const forward = wheelAcc > 0;
+            wheelAcc = 0;
+            wheelLockUntil = now + 420;
+            e.preventDefault();
+            if (forward) goNext(); else goPrev();
+          }, { passive: false });
         });
 
         rendition.on('relocated', (loc) => {
