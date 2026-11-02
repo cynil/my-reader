@@ -112,6 +112,25 @@ export default function ReaderView({ book, cryptoKey, onClose }) {
           const win = contents.window;
           if (!doc || !win) return;
 
+          // 同一个文档只绑一次。epub.js 在一个 spine 项重排时会再次触发 content hook，
+          // 重复绑定会让一次点击翻两页，或翻页与切换工具栏同时发生。
+          if (doc.__readerBound) return;
+          doc.__readerBound = true;
+
+          const DEBUG = /[?&]debug=1\b/.test(window.location.search);
+          let turnLock = 0;
+
+          // 所有翻页手势共用冷却：同一手势被派发两次时只翻一页
+          const turn = (dir) => {
+            const now = Date.now();
+            if (now - turnLock < 280) {
+              if (DEBUG) console.log('[reader] 忽略重复翻页（距上次 %dms）', now - turnLock);
+              return;
+            }
+            turnLock = now;
+            if (dir > 0) goNext(); else goPrev();
+          };
+
           let sx = 0;
           let sy = 0;
           let st = 0;
@@ -136,7 +155,7 @@ export default function ReaderView({ book, cryptoKey, onClose }) {
             const dy = t.clientY - sy;
             if (Date.now() - st > 800) return;
             if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.4) {
-              if (dx < 0) goNext(); else goPrev();
+              turn(dx < 0 ? 1 : -1);
             }
           }, { passive: true });
 
@@ -144,13 +163,25 @@ export default function ReaderView({ book, cryptoKey, onClose }) {
             if (moved) { moved = false; return; }
             const target = e.target;
             if (target && target.closest && target.closest('a, area, button, input, textarea, select, label')) return;
-            const selection = win.getSelection ? String(win.getSelection() || '') : '';
-            if (selection.trim()) return;
+
+            // 只有真的选中了文本才忽略；isCollapsed 为 true 表示只是光标，不能吞掉点击
+            const sel = win.getSelection ? win.getSelection() : null;
+            if (sel && !sel.isCollapsed && String(sel).trim()) return;
 
             const width = win.innerWidth || 0;
             if (!width) return;
-            if (e.clientX < width * 0.25) goPrev();
-            else if (e.clientX > width * 0.75) goNext();
+
+            const ratio = e.clientX / width;
+            // 三等分：左 1/3 上一页、右 1/3 下一页、中间 1/3 切换工具栏。
+            // 原来中间占一半，点偏一点就会误触切换。
+            const zone = ratio < 1 / 3 ? 'prev' : ratio > 2 / 3 ? 'next' : 'toggle';
+            if (DEBUG) {
+              console.log('[reader] click x=%d width=%d ratio=%s zone=%s',
+                Math.round(e.clientX), width, ratio.toFixed(2), zone);
+            }
+
+            if (zone === 'prev') turn(-1);
+            else if (zone === 'next') turn(1);
             else setChromeHidden((v) => !v);
           });
 
@@ -182,7 +213,7 @@ export default function ReaderView({ book, cryptoKey, onClose }) {
             wheelAcc = 0;
             wheelLockUntil = now + 420;
             e.preventDefault();
-            if (forward) goNext(); else goPrev();
+            turn(forward ? 1 : -1);
           }, { passive: false });
         });
 
