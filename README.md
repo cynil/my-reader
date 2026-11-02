@@ -70,11 +70,16 @@ GitHub Actions        npm ci → npm run build → 部署 dist/ 到 Pages
 
 ## 加一本书
 
+两种用法，效果一样：
+
 ```powershell
-npm run add -- "D:\Downloads\新书.epub"
+npm run add -- "D:\Downloads\新书.epub"    # 复制进来 + 加密
+npm run add                                 # 直接加密 sources/ 里已有的书
 ```
 
-口令是交互输入的（不回显、不进 shell 历史）。它会依次做完：
+不带参数时，它会把 `sources/` 目录里所有还没加密（或改动过）的书一起处理——所以你手动把 EPUB 拖进 `sources/` 之后，跑一句 `npm run add` 就够了。
+
+口令是交互输入的（不回显、不进 shell 历史）。带路径时它会依次做完：
 
 1. 复制进 `sources/`（同名同内容自动识别为重复，不会产生副本）
 2. 加密新增/变化的书，写出 `public/data`

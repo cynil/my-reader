@@ -1,19 +1,20 @@
 #!/usr/bin/env node
 /**
- * 一条命令加书：复制 → 加密 → git add。
+ * 加书：复制 → 加密 → git add。
  *
- *   npm run add -- "D:\Downloads\新书.epub"
+ *   npm run add                                # 加密 sources/ 里已有的书
+ *   npm run add -- "D:\Downloads\新书.epub"     # 复制进来再加密
  *   npm run add -- 一本.epub 另一本.epub
  *
  * 口令交互输入（不回显、不进 shell 历史）。
- * 自动化场景可以用环境变量：BOOK_PASSPHRASE=xxx npm run add -- ...
+ * 自动化场景可以用环境变量：BOOK_PASSPHRASE=xxx npm run add
  */
 
 import { existsSync, statSync, readFileSync, copyFileSync, mkdirSync } from 'node:fs';
 import { basename, extname, join, resolve, isAbsolute } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import readline from 'node:readline';
-import { encryptLibrary, PATHS, sha256, MIN_PASSPHRASE } from './lib/vault.mjs';
+import { encryptLibrary, PATHS, sha256, walkEpubs, MIN_PASSPHRASE } from './lib/vault.mjs';
 
 const C = {
   dim: (s) => `\x1b[2m${s}\x1b[0m`,
@@ -102,37 +103,45 @@ function stageData() {
 
 async function main() {
   const inputs = process.argv.slice(2).filter((a) => !a.startsWith('--'));
-  if (!inputs.length) {
-    console.error('用法：npm run add -- "D:\\Downloads\\新书.epub"');
-    process.exitCode = 1;
-    return;
-  }
 
   if (!existsSync(PATHS.sources)) mkdirSync(PATHS.sources, { recursive: true });
 
   const prepared = [];
 
-  for (const input of inputs) {
-    const src = isAbsolute(input) ? input : resolve(process.cwd(), input);
-    if (!existsSync(src) || !statSync(src).isFile()) {
-      console.error(C.red(`✗ 找不到文件：${input}`));
+  if (!inputs.length) {
+    // 不带参数：把 sources/ 里已有的书全部加密一遍
+    const pending = walkEpubs(PATHS.sources);
+    if (!pending.length) {
+      console.error(C.red('✗ sources/ 里没有 EPUB'));
+      console.error('  放书进去： npm run add -- "D:\\Downloads\\新书.epub"');
+      console.error('  或手动复制到 sources/ 再跑一次 npm run add');
       process.exitCode = 1;
       return;
     }
-    if (extname(src).toLowerCase() !== '.epub') {
-      console.error(C.red(`✗ 不是 .epub 文件：${input}`));
-      process.exitCode = 1;
-      return;
-    }
+    console.log(C.dim(`sources/ 里已有 ${pending.length} 本书，直接加密`));
+  } else {
+    for (const input of inputs) {
+      const src = isAbsolute(input) ? input : resolve(process.cwd(), input);
+      if (!existsSync(src) || !statSync(src).isFile()) {
+        console.error(C.red(`✗ 找不到文件：${input}`));
+        process.exitCode = 1;
+        return;
+      }
+      if (extname(src).toLowerCase() !== '.epub') {
+        console.error(C.red(`✗ 不是 .epub 文件：${input}`));
+        process.exitCode = 1;
+        return;
+      }
 
-    const { dest, duplicate } = resolveDestination(src);
-    if (duplicate) {
-      console.log(C.dim(`= ${basename(dest)} 已在 sources/ 里（内容相同），跳过复制`));
-    } else {
-      copyFileSync(src, dest);
-      console.log(`${C.green('+')} 已复制到 sources/${basename(dest)}`);
+      const { dest, duplicate } = resolveDestination(src);
+      if (duplicate) {
+        console.log(C.dim(`= ${basename(dest)} 已在 sources/ 里（内容相同），跳过复制`));
+      } else {
+        copyFileSync(src, dest);
+        console.log(`${C.green('+')} 已复制到 sources/${basename(dest)}`);
+      }
+      prepared.push(basename(dest));
     }
-    prepared.push(basename(dest));
   }
 
   const passphrase = await getPassphrase();
@@ -143,7 +152,9 @@ async function main() {
     result = await encryptLibrary(passphrase, { log: (m) => console.log(C.dim(m)) });
   } catch (err) {
     console.error(C.red(`\n✗ ${err && err.message ? err.message : err}`));
-    console.error(C.dim('  书籍已放进 sources/，修好口令后重跑即可（不会重复复制）。'));
+    console.error(C.dim(prepared.length
+      ? '  书已放进 sources/，确认口令后重跑即可（不会重复复制）。'
+      : '  确认口令后重跑即可。'));
     process.exitCode = 1;
     return;
   }
@@ -154,7 +165,7 @@ async function main() {
   console.log(C.bold(`✅ 书库共 ${result.count} 本，密文 ${(result.totalBytes / 1048576).toFixed(2)} MB`));
   if (result.added.length) console.log(`   新增：${result.added.join('、')}`);
   if (result.removed.length) console.log(`   移除：${result.removed.join('、')}`);
-  console.log(`   本次源文件：${prepared.join('、')}`);
+  if (prepared.length) console.log(`   本次加入：${prepared.join('、')}`);
   console.log('');
   console.log(`   ${staged ? 'public/data 已加入暂存区' : C.red('未能自动 git add，请手动执行')}`);
   console.log(C.dim(`   git commit -m "data: 加书" && git push`));
