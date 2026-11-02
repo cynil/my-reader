@@ -142,21 +142,19 @@ export default function ReaderView({ book, cryptoKey, onClose }) {
           let st = 0;
           let moved = false;
 
-          // 判断这一帧是不是当前真正显示的那一页。
-          // epub.js 会同时保留多个内容文档，其中一个的 innerWidth 可能远大于
-          // iframe 自身的宽度（内容横向溢出），点到它就会算出完全错误的区域。
-          const pageWidth = () => {
+          // 把 iframe 内的坐标换算到页面坐标系。
+          // epub.js 的分页 iframe 往往比可视区宽得多（一帧里并排 N 栏，
+          // 例如 53 × 1280 = 67840），所以既不能用 win.innerWidth 当页宽，
+          // 也不能用帧宽——只有「帧在页面上的位置 + 帧内 clientX」才是用户真正点到的点。
+          const toScreenX = (clientX) => {
             try {
               const frame = win.frameElement;
-              const rect = frame ? frame.getBoundingClientRect() : null;
-              if (!rect || !rect.width) return win.innerWidth || 0;
-              // 内容比帧宽（横向溢出）→ 不是可视页
-              if ((win.innerWidth || 0) - rect.width > 4) return 0;
-              // 帧本身比窗口还宽 → epub.js 预渲染的宽幅帧，不是当前页
-              if (rect.width > window.innerWidth + 4) return 0;
-              return rect.width;
+              if (!frame) return clientX;
+              const rect = frame.getBoundingClientRect();
+              if (rect.right <= 0 || rect.left >= (window.innerWidth || 0)) return null; // 完全在屏外
+              return rect.left + clientX;
             } catch (err) {
-              return win.innerWidth || 0;
+              return clientX;
             }
           };
 
@@ -192,19 +190,19 @@ export default function ReaderView({ book, cryptoKey, onClose }) {
             const sel = win.getSelection ? win.getSelection() : null;
             if (sel && !sel.isCollapsed && String(sel).trim()) return;
 
-            const width = pageWidth();
-            if (!width) {
-              if (DEBUG) console.log('[reader] 忽略非可视文档 innerWidth=%d', win.innerWidth);
+            const screenX = toScreenX(e.clientX);
+            if (screenX == null) {
+              if (DEBUG) console.log('[reader] 忽略屏外文档 innerWidth=%d', win.innerWidth);
               return;
             }
 
-            const ratio = e.clientX / width;
+            const viewport = window.innerWidth || 1;
+            const ratio = screenX / viewport;
             // 三等分：左 1/3 上一页、右 1/3 下一页、中间 1/3 切换工具栏。
-            // 原来中间占一半，点偏一点就会误触切换。
             const zone = ratio < 1 / 3 ? 'prev' : ratio > 2 / 3 ? 'next' : 'toggle';
             if (DEBUG) {
-              console.log('[reader] click x=%d width=%d ratio=%s zone=%s',
-                Math.round(e.clientX), Math.round(width), ratio.toFixed(2), zone);
+              console.log('[reader] click screenX=%d viewport=%d ratio=%s zone=%s',
+                Math.round(screenX), viewport, ratio.toFixed(2), zone);
             }
 
             if (zone === 'prev') turn(-1);
