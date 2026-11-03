@@ -963,3 +963,41 @@ html[data-site="dark"] .lock-submit { color: #1a1613; }
 .icon-btn.spinning svg { animation: spin .8s linear infinite; }
 
 .sitefoot .foot-error { color: var(--accent); }
+
+
+/* ---------- 打开本地 EPUB ---------- */
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.library.is-dragging {
+  outline: 2px dashed var(--accent-line);
+  outline-offset: -16px;
+  border-radius: var(--radius-lg);
+}
+
+.drop-hint {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: var(--bg);
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: blur(3px);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.drop-hint svg { width: 40px; height: 40px; stroke-width: 1.4; }

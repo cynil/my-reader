@@ -2,10 +2,20 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import LockScreen from './components/LockScreen.jsx';
 import LibraryView from './components/LibraryView.jsx';
 import ReaderView from './components/ReaderView.jsx';
-import { BadKeyError, forgetKey, loadKeyParams, loadManifest, recallKey, rememberKey, resetCaches, unlock } from './lib/library.js';
+import {
+  BadKeyError, fetchBookBuffer, forgetKey, loadKeyParams, loadManifest,
+  recallKey, rememberKey, resetCaches, unlock,
+} from './lib/library.js';
 import { useHashRoute } from './lib/useHashRoute.js';
 
 const FOCUS_REFRESH_MS = 30000;
+
+const toHex = (buffer) => {
+  const bytes = new Uint8Array(buffer);
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 1) out += bytes[i].toString(16).padStart(2, '0');
+  return out;
+};
 
 export default function App() {
   const [phase, setPhase] = useState('booting'); // booting | locked | ready | error
@@ -13,8 +23,17 @@ export default function App() {
   const [library, setLibrary] = useState(null);
   const [bootError, setBootError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-  const [refreshError, setRefreshError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [localBook, setLocalBook] = useState(null); // { book, buffer }
   const { bookId, openBook, closeBook } = useHashRoute();
+
+  const noticeTimer = useRef(null);
+  const showNotice = useCallback((message) => {
+    setNotice(message || '');
+    clearTimeout(noticeTimer.current);
+    if (message) noticeTimer.current = setTimeout(() => setNotice(''), 4000);
+  }, []);
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,25 +68,27 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
-  /** 重新拉取清单。fresh: true 会绕过 HTTP 缓存，否则 GitHub Pages 的 10 分钟缓存会让书架停在旧状态。 */
+  /**
+   * 重新拉取清单。默认走 fresh，绕过 HTTP 缓存——
+   * GitHub Pages 对所有文件发 max-age=600，不这么做书架会停在 10 分钟前的状态。
+   */
   const refreshLibrary = useCallback(async () => {
     if (!cryptoKey) return false;
     setRefreshing(true);
     try {
       const manifest = await loadManifest(cryptoKey, { fresh: true });
       setLibrary(manifest);
-      setRefreshError('');
+      showNotice('');
       return true;
     } catch (err) {
-      const message = err instanceof BadKeyError ? '口令已失效，请重新解锁' : (err && err.message) || '刷新失败';
-      setRefreshError(message);
+      showNotice(err instanceof BadKeyError ? '口令已失效，请重新解锁' : (err && err.message) || '刷新失败');
       return false;
     } finally {
       setRefreshing(false);
     }
-  }, [cryptoKey]);
+  }, [cryptoKey, showNotice]);
 
-  // 切回标签页时自动检查一次（节流，避免频繁请求）
+  // 切回标签页时自动检查一次（节流）
   const lastFocusRefresh = useRef(0);
   useEffect(() => {
     if (phase !== 'ready') return undefined;
@@ -87,6 +108,32 @@ export default function App() {
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [phase, refreshLibrary]);
+
+  /** 打开本地 EPUB：直接读文件，不经过书库、不需要口令 */
+  const openLocalFile = useCallback(async (file) => {
+    if (!file) return;
+    if (!/\.epub$/i.test(file.name)) {
+      showNotice('只支持 .epub 文件');
+      return;
+    }
+    try {
+      const buffer = await file.arrayBuffer();
+      const hex = toHex(await crypto.subtle.digest('SHA-256', buffer)).slice(0, 12);
+      showNotice('');
+      setLocalBook({
+        book: {
+          id: `local-${hex}`,
+          title: file.name.replace(/\.epub$/i, ''),
+          author: '',
+          srcHash: hex,
+          local: true,
+        },
+        buffer,
+      });
+    } catch (err) {
+      showNotice(err && err.message ? `读取失败：${err.message}` : '读取失败');
+    }
+  }, [showNotice]);
 
   const handleUnlock = async (passphrase, remember) => {
     try {
@@ -110,6 +157,23 @@ export default function App() {
     setPhase('locked');
     closeBook();
   };
+
+  const activeBook = library && bookId ? library.books.find((b) => b.id === bookId) : null;
+  const getRemoteBuffer = useCallback(
+    () => fetchBookBuffer(cryptoKey, activeBook),
+    [cryptoKey, activeBook]
+  );
+
+  if (localBook) {
+    return (
+      <ReaderView
+        key={localBook.book.id}
+        book={localBook.book}
+        getBuffer={() => Promise.resolve(localBook.buffer)}
+        onClose={() => setLocalBook(null)}
+      />
+    );
+  }
 
   if (phase === 'booting') {
     return (
@@ -137,14 +201,12 @@ export default function App() {
     return <LockScreen onUnlock={handleUnlock} />;
   }
 
-  const activeBook = bookId ? library.books.find((b) => b.id === bookId) : null;
-
   if (activeBook) {
     return (
       <ReaderView
         key={activeBook.id}
         book={activeBook}
-        cryptoKey={cryptoKey}
+        getBuffer={getRemoteBuffer}
         onClose={closeBook}
       />
     );
@@ -158,7 +220,8 @@ export default function App() {
       onLock={handleLock}
       onRefresh={refreshLibrary}
       refreshing={refreshing}
-      refreshError={refreshError}
+      onOpenLocal={openLocalFile}
+      notice={notice}
     />
   );
 }

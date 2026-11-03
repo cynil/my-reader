@@ -64,3 +64,10 @@ export const RefreshIcon = (props) => (
     <path d="M20 5v6h-6" />
   </svg>
 );
+
+export const OpenFileIcon = (props) => (
+  <svg {...base(props)}>
+    <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l1.8 2H19a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 19 18H4.5A1.5 1.5 0 0 1 3 16.5v-9Z" />
+    <path d="M12 13v-4m0 0-1.8 1.8M12 9l1.8 1.8" />
+  </svg>
+);

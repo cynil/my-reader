@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import BookCard from './BookCard.jsx';
-import { BookIcon, ChevronDown, LockIcon, MoonIcon, RefreshIcon, SearchIcon } from './Icons.jsx';
+import { BookIcon, ChevronDown, LockIcon, MoonIcon, OpenFileIcon, RefreshIcon, SearchIcon } from './Icons.jsx';
 import { getProgressMap } from '../lib/storage.js';
 import { useSettings } from '../lib/settings.jsx';
 
@@ -21,10 +21,38 @@ function formatDate(value) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-export default function LibraryView({ library, cryptoKey, onOpen, onLock, onRefresh, refreshing, refreshError }) {
+export default function LibraryView({ library, cryptoKey, onOpen, onLock, onRefresh, refreshing, onOpenLocal, notice }) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('added');
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef(null);
   const { settings, update } = useSettings();
+
+  const handleFile = (event) => {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = ''; // 允许重复选择同一个文件
+    if (file) onOpenLocal(file);
+  };
+
+  const handleDragOver = (event) => {
+    if (!event.dataTransfer) return;
+    const types = event.dataTransfer.types;
+    if (types && Array.prototype.indexOf.call(types, 'Files') === -1) return;
+    event.preventDefault();
+    setDragging(true);
+  };
+
+  const handleDragLeave = (event) => {
+    if (event.currentTarget.contains(event.relatedTarget)) return;
+    setDragging(false);
+  };
+
+  const handleDrop = (event) => {
+    event.preventDefault();
+    setDragging(false);
+    const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+    if (file) onOpenLocal(file);
+  };
 
   const allBooks = library.books || [];
 
@@ -122,6 +150,23 @@ export default function LibraryView({ library, cryptoKey, onOpen, onLock, onRefr
 
           <button
             type="button"
+            className="icon-btn"
+            onClick={() => fileInputRef.current && fileInputRef.current.click()}
+            title="打开本地 EPUB"
+            aria-label="打开本地 EPUB"
+          >
+            <OpenFileIcon />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".epub,application/epub+zip"
+            className="visually-hidden"
+            onChange={handleFile}
+          />
+
+          <button
+            type="button"
             className={`icon-btn${refreshing ? ' spinning' : ''}`}
             onClick={onRefresh}
             disabled={refreshing}
@@ -137,7 +182,18 @@ export default function LibraryView({ library, cryptoKey, onOpen, onLock, onRefr
         </div>
       </header>
 
-      <main className="library">
+      <main
+        className={`library${dragging ? ' is-dragging' : ''}`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {dragging && (
+          <div className="drop-hint">
+            <OpenFileIcon />
+            <span>松开以打开本地 EPUB</span>
+          </div>
+        )}
         {books.length > 0 ? (
           <div className="grid">
             {books.map((book, i) => (
@@ -165,7 +221,7 @@ export default function LibraryView({ library, cryptoKey, onOpen, onLock, onRefr
 
       <footer className="sitefoot">
         共 {allBooks.length} 本书{library.generatedAt ? ` · 书库更新于 ${formatDate(library.generatedAt)}` : ''} · 全部内容以密文存放
-        {refreshError ? <span className="foot-error"> · {refreshError}</span> : null}
+        {notice ? <div className="toast show">{notice}</div> : null}
       </footer>
     </div>
   );

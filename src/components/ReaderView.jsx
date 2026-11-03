@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ePub from 'epubjs';
-import { fetchBookBuffer } from '../lib/library.js';
 import { injectCss, themeCss } from '../lib/reader-theme.js';
 import { getProgress, setProgress } from '../lib/storage.js';
 import { useSettings } from '../lib/settings.jsx';
@@ -11,7 +10,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight } from './Icons.jsx';
 // 同一次会话里复用定位表，避免每次打开都重新计算
 const locationsCache = new Map();
 
-export default function ReaderView({ book, cryptoKey, onClose }) {
+export default function ReaderView({ book, getBuffer, onClose }) {
   const { settings, update, reset } = useSettings();
 
   const viewerRef = useRef(null);
@@ -90,7 +89,7 @@ export default function ReaderView({ book, cryptoKey, onClose }) {
 
     (async () => {
       try {
-        const buffer = await fetchBookBuffer(cryptoKey, book);
+        const buffer = await getBuffer();
         if (cancelled) return;
 
         const epubBook = ePub(buffer);
