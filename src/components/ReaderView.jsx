@@ -275,13 +275,15 @@ export default function ReaderView({ book, cryptoKey, onClose }) {
         setLoading(false);
 
         // 后台生成定位表，用于百分比与拖动跳转
-        const cached = locationsCache.get(book.id);
+        // key 带上 srcHash：书被重新加密后内容变了，旧定位表不能复用
+        const locKey = `${book.id}:${book.srcHash || ''}`;
+        const cached = locationsCache.get(locKey);
         if (cached) {
           try { epubBook.locations.load(cached); } catch (err) { /* noop */ }
         }
         if (epubBook.locations.length() === 0) {
           await epubBook.locations.generate(1600);
-          try { locationsCache.set(book.id, epubBook.locations.save()); } catch (err) { /* noop */ }
+          try { locationsCache.set(locKey, epubBook.locations.save()); } catch (err) { /* noop */ }
         }
         if (cancelled) return;
         setLocationsReady(true);

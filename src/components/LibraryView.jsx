@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import BookCard from './BookCard.jsx';
-import { BookIcon, ChevronDown, LockIcon, MoonIcon, SearchIcon } from './Icons.jsx';
+import { BookIcon, ChevronDown, LockIcon, MoonIcon, RefreshIcon, SearchIcon } from './Icons.jsx';
 import { getProgressMap } from '../lib/storage.js';
 import { useSettings } from '../lib/settings.jsx';
 
@@ -21,7 +21,7 @@ function formatDate(value) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-export default function LibraryView({ library, cryptoKey, onOpen, onLock }) {
+export default function LibraryView({ library, cryptoKey, onOpen, onLock, onRefresh, refreshing, refreshError }) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('added');
   const { settings, update } = useSettings();
@@ -120,6 +120,17 @@ export default function LibraryView({ library, cryptoKey, onOpen, onLock }) {
             <MoonIcon />
           </button>
 
+          <button
+            type="button"
+            className={`icon-btn${refreshing ? ' spinning' : ''}`}
+            onClick={onRefresh}
+            disabled={refreshing}
+            title="重新载入书架"
+            aria-label="重新载入书架"
+          >
+            <RefreshIcon />
+          </button>
+
           <button type="button" className="icon-btn" onClick={onLock} title="锁定书架" aria-label="锁定书架">
             <LockIcon />
           </button>
@@ -154,6 +165,7 @@ export default function LibraryView({ library, cryptoKey, onOpen, onLock }) {
 
       <footer className="sitefoot">
         共 {allBooks.length} 本书{library.generatedAt ? ` · 书库更新于 ${formatDate(library.generatedAt)}` : ''} · 全部内容以密文存放
+        {refreshError ? <span className="foot-error"> · {refreshError}</span> : null}
       </footer>
     </div>
   );

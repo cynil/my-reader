@@ -1,15 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import LockScreen from './components/LockScreen.jsx';
 import LibraryView from './components/LibraryView.jsx';
 import ReaderView from './components/ReaderView.jsx';
 import { BadKeyError, forgetKey, loadKeyParams, loadManifest, recallKey, rememberKey, resetCaches, unlock } from './lib/library.js';
 import { useHashRoute } from './lib/useHashRoute.js';
 
+const FOCUS_REFRESH_MS = 30000;
+
 export default function App() {
   const [phase, setPhase] = useState('booting'); // booting | locked | ready | error
   const [cryptoKey, setCryptoKey] = useState(null);
   const [library, setLibrary] = useState(null);
   const [bootError, setBootError] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState('');
   const { bookId, openBook, closeBook } = useHashRoute();
 
   useEffect(() => {
@@ -44,6 +48,45 @@ export default function App() {
 
     return () => { cancelled = true; };
   }, []);
+
+  /** 重新拉取清单。fresh: true 会绕过 HTTP 缓存，否则 GitHub Pages 的 10 分钟缓存会让书架停在旧状态。 */
+  const refreshLibrary = useCallback(async () => {
+    if (!cryptoKey) return false;
+    setRefreshing(true);
+    try {
+      const manifest = await loadManifest(cryptoKey, { fresh: true });
+      setLibrary(manifest);
+      setRefreshError('');
+      return true;
+    } catch (err) {
+      const message = err instanceof BadKeyError ? '口令已失效，请重新解锁' : (err && err.message) || '刷新失败';
+      setRefreshError(message);
+      return false;
+    } finally {
+      setRefreshing(false);
+    }
+  }, [cryptoKey]);
+
+  // 切回标签页时自动检查一次（节流，避免频繁请求）
+  const lastFocusRefresh = useRef(0);
+  useEffect(() => {
+    if (phase !== 'ready') return undefined;
+
+    const maybeRefresh = () => {
+      const now = Date.now();
+      if (now - lastFocusRefresh.current < FOCUS_REFRESH_MS) return;
+      lastFocusRefresh.current = now;
+      refreshLibrary();
+    };
+    const onVisibility = () => { if (!document.hidden) maybeRefresh(); };
+
+    window.addEventListener('focus', maybeRefresh);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('focus', maybeRefresh);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [phase, refreshLibrary]);
 
   const handleUnlock = async (passphrase, remember) => {
     try {
@@ -107,5 +150,15 @@ export default function App() {
     );
   }
 
-  return <LibraryView library={library} cryptoKey={cryptoKey} onOpen={openBook} onLock={handleLock} />;
+  return (
+    <LibraryView
+      library={library}
+      cryptoKey={cryptoKey}
+      onOpen={openBook}
+      onLock={handleLock}
+      onRefresh={refreshLibrary}
+      refreshing={refreshing}
+      refreshError={refreshError}
+    />
+  );
 }

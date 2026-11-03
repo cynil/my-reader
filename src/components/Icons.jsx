@@ -57,3 +57,10 @@ export const ListIcon = (props) => (
 export const TypeIcon = (props) => (
   <svg {...base(props)}><path d="M5 6h14M12 6v12M9 18h6" /></svg>
 );
+
+export const RefreshIcon = (props) => (
+  <svg {...base(props)}>
+    <path d="M20 11a8 8 0 1 0-2.6 6.1" />
+    <path d="M20 5v6h-6" />
+  </svg>
+);

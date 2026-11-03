@@ -954,3 +954,12 @@ html[data-site="dark"] .lock-submit { color: #1a1613; }
   object-fit: cover;
   z-index: 1;
 }
+
+
+/* ---------- 刷新按钮 / 页脚错误 ---------- */
+.icon-btn:disabled { opacity: .45; cursor: default; }
+.icon-btn:disabled:hover { background: none; border-color: transparent; color: var(--text-dim); }
+
+.icon-btn.spinning svg { animation: spin .8s linear infinite; }
+
+.sitefoot .foot-error { color: var(--accent); }

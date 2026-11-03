@@ -29,9 +29,10 @@ export class BadKeyError extends Error {
 
 let paramsCache = null;
 
-export async function loadKeyParams() {
-  if (paramsCache) return paramsCache;
-  const res = await fetch(asset('data/key.json'), { cache: 'no-store' });
+export async function loadKeyParams(fresh = false) {
+  if (paramsCache && !fresh) return paramsCache;
+  const url = fresh ? `${asset('data/key.json')}?t=${Date.now().toString(36)}` : asset('data/key.json');
+  const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error(`读取密钥参数失败（HTTP ${res.status}）`);
   const params = await res.json();
   if (!params || !params.salt) throw new Error('密钥参数格式不正确');
@@ -39,15 +40,26 @@ export async function loadKeyParams() {
   return params;
 }
 
-async function fetchBytes(path) {
-  const res = await fetch(asset(path));
+/**
+ * 取二进制。
+ * GitHub Pages 对静态资源发 `cache-control: max-age=600`，普通 fetch 会命中磁盘缓存，
+ * 结果就是「服务端已经更新，浏览器还是旧的」。清单这类小文件一律绕缓存。
+ * version 用来给同名资源换 URL（书籍内容被重新加密时）。
+ */
+async function fetchBytes(path, { fresh = false, version = '' } = {}) {
+  const url = new URL(asset(path));
+  if (version) url.searchParams.set('v', version);
+  if (fresh) url.searchParams.set('t', Date.now().toString(36));
+
+  const options = fresh ? { cache: 'no-store' } : undefined;
+  const res = await fetch(url.toString(), options);
   if (!res.ok) throw new Error(`读取 ${path} 失败（HTTP ${res.status}）`);
   return new Uint8Array(await res.arrayBuffer());
 }
 
 /** 解密书目清单；清单本身也是密文，解不开即口令错误 */
-export async function loadManifest(key) {
-  const raw = await fetchBytes('data/library.enc');
+export async function loadManifest(key, { fresh = true } = {}) {
+  const raw = await fetchBytes('data/library.enc', { fresh });
   try {
     return await decryptJson(key, raw, 'library');
   } catch (err) {
@@ -55,9 +67,9 @@ export async function loadManifest(key) {
   }
 }
 
-/** 用口令解锁：返回密钥 + 清单 */
+/** 用口令解锁：返回密钥 + 清单。换过口令时 key.json 的盐会变，这里强制取新的。 */
 export async function unlock(passphrase) {
-  const params = await loadKeyParams();
+  const params = await loadKeyParams(true);
   const key = await deriveKey(passphrase, params.salt, params.iterations);
   const library = await loadManifest(key);
   return { key, library, params };
@@ -96,9 +108,12 @@ export async function recallKey(params) {
   }
 }
 
+/** 内容版本号：书被重新加密后 srcHash 会变，URL 跟着换，避免读到旧密文 */
+const versionOf = (book) => (book && book.srcHash ? book.srcHash.slice(0, 12) : '');
+
 /** 取一本书并解密成 ArrayBuffer，直接交给 epub.js */
 export async function fetchBookBuffer(key, book) {
-  const raw = await fetchBytes(dataFile(book.file));
+  const raw = await fetchBytes(dataFile(book.file), { version: versionOf(book) });
   try {
     return await decryptBytes(key, raw, `book:${book.id}`);
   } catch (err) {
@@ -122,14 +137,15 @@ function sniffImageType(bytes) {
 /** 封面同样是密文，解密后转成 blob URL */
 export async function fetchCoverUrl(key, book) {
   if (!book.cover) return null;
-  if (coverCache.has(book.id)) return coverCache.get(book.id);
+  const cacheKey = `${book.id}:${versionOf(book)}`;
+  if (coverCache.has(cacheKey)) return coverCache.get(cacheKey);
   try {
-    const raw = await fetchBytes(dataFile(book.cover));
+    const raw = await fetchBytes(dataFile(book.cover), { version: versionOf(book) });
     const plain = await decryptBytes(key, raw, `cover:${book.id}`);
     const bytes = new Uint8Array(plain);
     if (!bytes.length) throw new Error('解密结果为空');
     const url = URL.createObjectURL(new Blob([plain], { type: sniffImageType(bytes) }));
-    coverCache.set(book.id, url);
+    coverCache.set(cacheKey, url);
     return url;
   } catch (err) {
     // 不要静默失败：封面是个独立的功能点，出错要能看见
