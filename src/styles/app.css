@@ -1055,3 +1055,66 @@ html[data-site="dark"] .lock-submit { color: #1a1613; }
 .note-pop-body a { color: var(--accent); }
 .note-pop-body img { max-width: 100%; height: auto; }
 .note-pop-body blockquote { margin: .6em 0; padding-left: .8em; border-left: 2px solid var(--reader-line); opacity: .85; }
+
+
+/* ---------- 滚动条美化 ----------
+   默认滚动条在浅色/夜间主题下都很突兀。这里统一成 6px 细条、半透明、
+   颜色跟随当前正文主题；同时保留 scrollbar-width，Firefox 与新版 Chrome 也吃。 */
+.reader[data-rt="paper"] {
+  --scroll-thumb: rgba(32, 28, 22, .20);
+  --scroll-thumb-hover: rgba(32, 28, 22, .38);
+}
+.reader[data-rt="sepia"] {
+  --scroll-thumb: rgba(67, 55, 42, .22);
+  --scroll-thumb-hover: rgba(67, 55, 42, .40);
+}
+.reader[data-rt="night"] {
+  --scroll-thumb: rgba(195, 192, 185, .22);
+  --scroll-thumb-hover: rgba(195, 192, 185, .42);
+}
+
+.note-pop-body,
+.toc {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb, var(--line-strong)) transparent;
+}
+
+.note-pop-body::-webkit-scrollbar,
+.toc::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.note-pop-body::-webkit-scrollbar-track,
+.toc::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.note-pop-body::-webkit-scrollbar-thumb,
+.toc::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb, var(--line-strong));
+  border-radius: 999px;
+}
+
+.note-pop-body::-webkit-scrollbar-thumb:hover,
+.toc::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover, var(--line-strong));
+}
+
+/* 书架页本身的滚动条也顺手统一，避免一页两套风格 */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+html::-webkit-scrollbar { width: 10px; height: 10px; }
+html::-webkit-scrollbar-track { background: transparent; }
+html::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+html::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+  background-clip: padding-box;
+}
