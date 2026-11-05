@@ -22,6 +22,11 @@ const FLOWS = [
   { value: 'scrolled', label: '上下滚动' },
 ];
 
+const NOTE_MODES = [
+  { value: 'popup', label: '弹层显示' },
+  { value: 'jump', label: '跳转原文' },
+];
+
 export default function SettingsPanel({ settings, onUpdate, onReset, onClose }) {
   return (
     <aside className="drawer drawer-right" aria-label="阅读设置">
@@ -104,6 +109,23 @@ export default function SettingsPanel({ settings, onUpdate, onReset, onClose }) 
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="setting">
+        <span className="setting-label">注释</span>
+        <div className="segmented">
+          {NOTE_MODES.map((m) => (
+            <button
+              key={m.value}
+              type="button"
+              aria-pressed={(settings.noteMode || 'popup') === m.value}
+              onClick={() => onUpdate({ noteMode: m.value })}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+        <p className="setting-hint">识别不准时改成「跳转原文」，按书里原本的链接跳转。</p>
       </div>
 
       <button type="button" className="ghost-btn" onClick={onReset}>恢复默认设置</button>

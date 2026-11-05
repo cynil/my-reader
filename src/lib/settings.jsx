@@ -8,6 +8,7 @@ export const DEFAULT_SETTINGS = {
   fontFamily: 'serif', // serif | sans
   flow: 'paginated',   // paginated | scrolled
   site: 'auto',        // auto | light | dark
+  noteMode: 'popup',   // popup | jump —— 注释弹层显示，或直接跳到原文
 };
 
 const SettingsContext = createContext(null);

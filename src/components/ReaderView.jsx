@@ -207,6 +207,8 @@ export default function ReaderView({ book, getBuffer, onClose }) {
           // 注释链接：在捕获阶段拦下来，阻止 epub.js 跳到脚注所在的页。
           // 放捕获阶段是因为 epub.js 自己也监听 document 的 click，先注册先执行。
           doc.addEventListener('click', (event) => {
+            // 用户可以选择关掉弹层：识别不准时直接走书里原本的跳转
+            if (settingsRef.current.noteMode === 'jump') return;
             const anchor = event.target && event.target.closest ? event.target.closest('a[href]') : null;
             if (!anchor) return;
             const href = anchor.getAttribute('href') || '';

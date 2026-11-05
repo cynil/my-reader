@@ -1118,3 +1118,12 @@ html::-webkit-scrollbar-thumb:hover {
   background: var(--text-faint);
   background-clip: padding-box;
 }
+
+
+/* 设置项里的一行说明 */
+.setting-hint {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  opacity: .5;
+}
