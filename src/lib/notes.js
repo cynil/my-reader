@@ -60,6 +60,10 @@ export function isNoteLink(anchor, href, doc) {
   const className = typeof anchor.className === 'string' ? anchor.className : '';
   if (NOTE_WORD.test(className)) return true;
 
+  // 4) 链接文字就是个短数字（「87」「[3]」这种），且指向文档内锚点 —— 最常见的脚注标记
+  const text = (anchor.textContent || '').trim();
+  if (/^[[(（【]?\d{1,4}[\])）】]?$/.test(text)) return true;
+
   return false;
 }
 
@@ -82,12 +86,27 @@ function findByName(doc, name) {
   return null;
 }
 
-/** 目标常常是个空锚点，往上找第一个有文字的元素 */
+/** 目标常常是个空锚点，往上找第一个有文字的元素（但不许爬到 body/html，否则会把整章塞进浮层） */
 function nearestContent(el) {
   if ((el.textContent || '').trim()) return el;
   let node = el.parentElement;
   while (node && !(node.textContent || '').trim()) node = node.parentElement;
-  return node || el;
+  if (!node) return el;
+  const tag = (node.tagName || '').toLowerCase();
+  if (tag === 'body' || tag === 'html') return el;
+  return node;
+}
+
+const normalizePath = (value) => String(value || '').replace(/^\.?\//, '').replace(/\\/g, '/');
+
+/** 两个路径是否指向同一个文件（容忍目录前缀与 ./ 写法差异） */
+function sameFile(a, b) {
+  const left = normalizePath(a);
+  const right = normalizePath(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  const baseOf = (p) => p.split('/').pop();
+  return baseOf(left) === baseOf(right) && (left.endsWith(`/${right}`) || right.endsWith(`/${left}`));
 }
 
 /**
@@ -99,14 +118,26 @@ export async function resolveNoteElement({ href, doc, baseHref, loadSection }) {
   const fragment = safeDecode(rawFragment || '');
   if (!fragment) return null;
 
-  let targetDoc = doc;
+  // 调用方可能给回 Document，也可能给回 documentElement
+  const asDocument = (candidate) => {
+    if (!candidate) return null;
+    if (typeof candidate.getElementById === 'function') return candidate;
+    return candidate.ownerDocument || null;
+  };
+
+  let targetDoc = asDocument(doc);
+
+  // 链接常常写成「本章文件名#锚点」，实际就在当前文档里。
+  // 这种情况必须直接用当前文档，否则要白白走一次加载，失败就变成"点了没反应"。
   if (rawPath) {
     const resolved = resolveHrefPath(baseHref, rawPath);
-    if (!resolved) return null;
-    targetDoc = await loadSection(resolved);
-    if (!targetDoc) return null;
+    if (resolved && !sameFile(resolved, baseHref)) {
+      const loaded = asDocument(await loadSection(resolved));
+      if (loaded) targetDoc = loaded;
+    }
   }
 
+  if (!targetDoc) return null;
   const el = targetDoc.getElementById(fragment) || findByName(targetDoc, fragment);
   return el ? nearestContent(el) : null;
 }

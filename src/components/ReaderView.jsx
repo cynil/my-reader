@@ -132,14 +132,21 @@ export default function ReaderView({ book, getBuffer, onClose }) {
           const epubBook = bookRef.current;
           const rendition = renditionRef.current;
           if (!epubBook) return;
-          const fallback = () => {
-            if (rendition) Promise.resolve(rendition.display(href)).catch(() => {});
+
+          const baseHref = (contents.section && contents.section.href) || '';
+          const fallback = (reason) => {
+            console.warn('[note] 没能取出注释内容，退回原跳转：', reason, { href, baseHref });
+            if (!rendition) return;
+            Promise.resolve(rendition.display(href)).catch((err) => {
+              console.warn('[note] 原跳转也失败了：', err && err.message ? err.message : err);
+            });
           };
+
           try {
             const el = await resolveNoteElement({
               href,
               doc: contents.document,
-              baseHref: (contents.section && contents.section.href) || '',
+              baseHref,
               loadSection: async (path) => {
                 let section = epubBook.spine.get(path);
                 if (!section) {
@@ -148,17 +155,19 @@ export default function ReaderView({ book, getBuffer, onClose }) {
                     item.href === path || item.href.endsWith(`/${path}`) || path.endsWith(`/${item.href}`));
                 }
                 if (!section) return null;
-                return section.load(epubBook.load.bind(epubBook));
+                const loaded = await section.load(epubBook.load.bind(epubBook));
+                if (!loaded) return null;
+                // Section.load 解析出的是 documentElement（Element），不是 Document
+                return loaded.ownerDocument || loaded;
               },
             });
-            if (!el) { fallback(); return; }
+            if (!el) { fallback('找不到目标元素 #' + href.split('#').pop()); return; }
 
             const html = extractNoteHtml(el);
-            if (!html) { fallback(); return; }
+            if (!html) { fallback('目标元素没有可显示的内容'); return; }
             setNote({ html, x, y });
           } catch (err) {
-            console.warn('[note] 打开注释失败，退回跳转', err);
-            fallback();
+            fallback(err && err.message ? err.message : String(err));
           }
         };
 
