@@ -1127,3 +1127,42 @@ html::-webkit-scrollbar-thumb:hover {
   line-height: 1.6;
   opacity: .5;
 }
+
+
+/* ---------- 抽屉滚动 ----------
+   设置项变多后整条抽屉需要能滚；标题栏 sticky 吸顶，
+   否则一滚就找不着关闭按钮。 */
+.drawer {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb, var(--line-strong)) transparent;
+}
+
+.drawer::-webkit-scrollbar { width: 6px; height: 6px; }
+.drawer::-webkit-scrollbar-track { background: transparent; }
+.drawer::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb, var(--line-strong));
+  border-radius: 999px;
+}
+.drawer::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover, var(--line-strong));
+}
+
+.drawer-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--reader-bg);
+}
+
+/* 设置项默认 flex-shrink:1，会被压扁而不是滚动，这里禁止收缩 */
+.drawer .setting,
+.drawer .ghost-btn {
+  flex: none;
+}
+
+.drawer .ghost-btn {
+  margin-bottom: 26px;
+}
