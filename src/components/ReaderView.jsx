@@ -5,6 +5,8 @@ import { getProgress, setProgress } from '../lib/storage.js';
 import { useSettings } from '../lib/settings.jsx';
 import TocPanel from './TocPanel.jsx';
 import SettingsPanel from './SettingsPanel.jsx';
+import NotePopup from './NotePopup.jsx';
+import { extractNoteHtml, isNoteLink, resolveNoteElement } from '../lib/notes.js';
 import { ArrowLeft, ChevronLeft, ChevronRight } from './Icons.jsx';
 
 // 同一次会话里复用定位表，避免每次打开都重新计算
@@ -33,6 +35,7 @@ export default function ReaderView({ book, getBuffer, onClose }) {
   const [title, setTitle] = useState(book.title);
   const [author, setAuthor] = useState(book.author || '');
   const [activeHref, setActiveHref] = useState('');
+  const [note, setNote] = useState(null); // { html, x, y }
 
   settingsRef.current = settings;
 
@@ -124,6 +127,36 @@ export default function ReaderView({ book, getBuffer, onClose }) {
           if (dir > 0) goNext(); else goPrev();
         };
 
+        /** 打开注释浮层；解析失败就退回普通锚点跳转，不至于点了没反应 */
+        const openNote = async ({ href, contents, x, y }) => {
+          const epubBook = bookRef.current;
+          const rendition = renditionRef.current;
+          if (!epubBook) return;
+          const fallback = () => {
+            if (rendition) Promise.resolve(rendition.display(href)).catch(() => {});
+          };
+          try {
+            const el = await resolveNoteElement({
+              href,
+              doc: contents.document,
+              baseHref: (contents.section && contents.section.href) || '',
+              loadSection: async (path) => {
+                const section = epubBook.spine.get(path);
+                if (!section) return null;
+                return section.load(epubBook.load.bind(epubBook));
+              },
+            });
+            if (!el) { fallback(); return; }
+
+            const html = extractNoteHtml(el);
+            if (!html) { fallback(); return; }
+            setNote({ html, x, y });
+          } catch (err) {
+            console.warn('[note] 打开注释失败，退回跳转', err);
+            fallback();
+          }
+        };
+
         rendition.hooks.content.register((contents) => {
           injectCss(contents, themeCss(settingsRef.current));
 
@@ -157,6 +190,29 @@ export default function ReaderView({ book, getBuffer, onClose }) {
             }
           };
 
+          // 注释链接：在捕获阶段拦下来，阻止 epub.js 跳到脚注所在的页。
+          // 放捕获阶段是因为 epub.js 自己也监听 document 的 click，先注册先执行。
+          doc.addEventListener('click', (event) => {
+            const anchor = event.target && event.target.closest ? event.target.closest('a[href]') : null;
+            if (!anchor) return;
+            const href = anchor.getAttribute('href') || '';
+            if (!isNoteLink(anchor, href)) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            let x = 0;
+            let y = 0;
+            try {
+              const frame = win.frameElement;
+              const rect = frame ? frame.getBoundingClientRect() : { left: 0, top: 0 };
+              x = rect.left + event.clientX;
+              y = rect.top + event.clientY;
+            } catch (err) { /* noop */ }
+
+            openNote({ href, contents, x, y });
+          }, true);
+
           doc.addEventListener('touchstart', (e) => {
             const t = e.changedTouches && e.changedTouches[0];
             if (!t) return;
@@ -181,6 +237,7 @@ export default function ReaderView({ book, getBuffer, onClose }) {
           }, { passive: true });
 
           doc.addEventListener('click', (e) => {
+            setNote(null);
             if (moved) { moved = false; return; }
             const target = e.target;
             if (target && target.closest && target.closest('a, area, button, input, textarea, select, label')) return;
@@ -243,6 +300,7 @@ export default function ReaderView({ book, getBuffer, onClose }) {
 
         rendition.on('relocated', (loc) => {
           if (!loc || !loc.start) return;
+          setNote(null);
           lastCfiRef.current = loc.start.cfi;
           setActiveHref(loc.start.href || '');
           measure(loc);
@@ -330,6 +388,7 @@ export default function ReaderView({ book, getBuffer, onClose }) {
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') {
+        if (note) { setNote(null); return; }
         if (drawer) { setDrawer(null); return; }
         if (chromeHidden) { setChromeHidden(false); return; }
         onClose();
@@ -346,7 +405,7 @@ export default function ReaderView({ book, getBuffer, onClose }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [drawer, chromeHidden, onClose, goNext, goPrev]);
+  }, [drawer, chromeHidden, note, onClose, goNext, goPrev]);
 
   const jumpTo = (href) => {
     setDrawer(null);
@@ -378,10 +437,10 @@ export default function ReaderView({ book, getBuffer, onClose }) {
           <span>{author}</span>
         </div>
         <div className="reader-actions">
-          <button type="button" className="text-btn" onClick={() => setDrawer((d) => (d === 'toc' ? null : 'toc'))}>
+          <button type="button" className="text-btn" onClick={() => { setNote(null); setDrawer((d) => (d === 'toc' ? null : 'toc')); }}>
             目录
           </button>
-          <button type="button" className="text-btn" onClick={() => setDrawer((d) => (d === 'settings' ? null : 'settings'))}>
+          <button type="button" className="text-btn" onClick={() => { setNote(null); setDrawer((d) => (d === 'settings' ? null : 'settings')); }}>
             Aa
           </button>
         </div>
@@ -416,6 +475,8 @@ export default function ReaderView({ book, getBuffer, onClose }) {
           </button>
         </div>
       </div>
+
+      {note && <NotePopup note={note} onClose={() => setNote(null)} />}
 
       {drawer && <div className="scrim" onClick={() => setDrawer(null)} />}
 
