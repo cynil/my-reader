@@ -18,18 +18,32 @@ const safeDecode = (value) => {
   try { return decodeURIComponent(value); } catch (err) { return value; }
 };
 
-/** 目标元素本身像不像一段注释 */
+/** 目标元素本身（含最近几层祖先）像不像一段注释 */
 function elementLooksLikeNote(el) {
   if (!el) return false;
-  const type = (el.getAttribute('epub:type') || '').toLowerCase();
-  if (type.includes('note')) return true;
 
-  const tag = (el.tagName || '').toLowerCase();
-  if (tag === 'aside') return true;
+  let node = el;
+  let depth = 0;
+  while (node && depth < 4) {
+    const type = (node.getAttribute ? node.getAttribute('epub:type') : '') || '';
+    if (type.toLowerCase().includes('note')) return true;
+
+    const tag = (node.tagName || '').toLowerCase();
+    if (tag === 'aside') return true;
+
+    const className = typeof node.className === 'string'
+      ? node.className
+      : (node.getAttribute ? node.getAttribute('class') : '') || '';
+    const id = node.id || '';
+    // 注释的语义常常写在父级上：<p class="ft"><a id="id1a">[1]</a> 正文…</p>
+    if (NOTE_WORD.test(className) || NOTE_WORD.test(id) || /\bft\b/i.test(className)) return true;
+
+    node = node.parentElement;
+    depth += 1;
+  }
+
   if (el.closest && el.closest('aside')) return true;
-
-  const className = typeof el.className === 'string' ? el.className : (el.getAttribute('class') || '');
-  return NOTE_WORD.test(className);
+  return false;
 }
 
 /**
@@ -86,15 +100,35 @@ function findByName(doc, name) {
   return null;
 }
 
-/** 目标常常是个空锚点，往上找第一个有文字的元素（但不许爬到 body/html，否则会把整章塞进浮层） */
-function nearestContent(el) {
-  if ((el.textContent || '').trim()) return el;
+const BLOCK_TAGS = new Set(['P', 'LI', 'DIV', 'ASIDE', 'DD', 'DT', 'BLOCKQUOTE', 'SECTION', 'ARTICLE', 'TD']);
+
+/**
+ * 取出真正承载注释正文的元素。
+ *
+ * 注释的 id 往往挂在行内锚点上，正文却在它所在的段落里：
+ *   <p class="notecontent"><a id="zhu1" href="...#zw1">[1]</a> 注释正文…</p>
+ * 所以行内目标要往上找到块级祖先，否则只能抓到「[1]」两个字。
+ */
+function pickContent(el) {
+  const tag = (el.tagName || '').toUpperCase();
+  if (BLOCK_TAGS.has(tag)) return el;
+
   let node = el.parentElement;
+  while (node) {
+    const name = (node.tagName || '').toUpperCase();
+    if (name === 'BODY' || name === 'HTML') break;
+    if (BLOCK_TAGS.has(name)) return node;
+    node = node.parentElement;
+  }
+
+  // 没有块级祖先（锚点直接挂在 body 下）：有文字就用它自己，
+  // 否则向上找一个有文字的元素，但不许越过 body
+  if ((el.textContent || '').trim()) return el;
+  node = el.parentElement;
   while (node && !(node.textContent || '').trim()) node = node.parentElement;
   if (!node) return el;
-  const tag = (node.tagName || '').toLowerCase();
-  if (tag === 'body' || tag === 'html') return el;
-  return node;
+  const last = (node.tagName || '').toUpperCase();
+  return (last === 'BODY' || last === 'HTML') ? el : node;
 }
 
 const normalizePath = (value) => String(value || '').replace(/^\.?\//, '').replace(/\\/g, '/');
@@ -139,7 +173,7 @@ export async function resolveNoteElement({ href, doc, baseHref, loadSection }) {
 
   if (!targetDoc) return null;
   const el = targetDoc.getElementById(fragment) || findByName(targetDoc, fragment);
-  return el ? nearestContent(el) : null;
+  return el ? pickContent(el) : null;
 }
 
 /** 去掉脚本、事件属性和危险 URL，其余保留 */
