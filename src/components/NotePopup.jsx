@@ -30,6 +30,15 @@ export default function NotePopup({ note, onClose }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  // 注释里的链接不能就地跳转：改父页面 hash 会把读者踢出阅读器
+  const handleBodyClick = (event) => {
+    const anchor = event.target.closest && event.target.closest('a[href]');
+    if (!anchor) return;
+    event.preventDefault();
+    const href = anchor.getAttribute('href') || '';
+    if (/^https?:/i.test(href)) window.open(href, '_blank', 'noopener,noreferrer');
+  };
+
   return (
     <div
       ref={ref}
@@ -45,7 +54,11 @@ export default function NotePopup({ note, onClose }) {
         </button>
       </div>
       {/* 内容来自书籍本身，已在 extractNoteHtml 里去掉脚本与事件属性 */}
-      <div className="note-pop-body" dangerouslySetInnerHTML={{ __html: note.html }} />
+      <div
+        className="note-pop-body"
+        onClick={handleBodyClick}
+        dangerouslySetInnerHTML={{ __html: note.html }}
+      />
     </div>
   );
 }

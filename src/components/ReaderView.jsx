@@ -141,7 +141,12 @@ export default function ReaderView({ book, getBuffer, onClose }) {
               doc: contents.document,
               baseHref: (contents.section && contents.section.href) || '',
               loadSection: async (path) => {
-                const section = epubBook.spine.get(path);
+                let section = epubBook.spine.get(path);
+                if (!section) {
+                  // spine.get 对路径写法比较挑剔，再按后缀匹配一次
+                  section = (epubBook.spine.spineItems || []).find((item) =>
+                    item.href === path || item.href.endsWith(`/${path}`) || path.endsWith(`/${item.href}`));
+                }
                 if (!section) return null;
                 return section.load(epubBook.load.bind(epubBook));
               },
@@ -196,7 +201,7 @@ export default function ReaderView({ book, getBuffer, onClose }) {
             const anchor = event.target && event.target.closest ? event.target.closest('a[href]') : null;
             if (!anchor) return;
             const href = anchor.getAttribute('href') || '';
-            if (!isNoteLink(anchor, href)) return;
+            if (!isNoteLink(anchor, href, doc)) return;
 
             event.preventDefault();
             event.stopPropagation();

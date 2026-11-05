@@ -8,17 +8,35 @@
  * 这里用「链接特征 + 目标 id 命名」做启发式判断，宁可作为注释处理。
  */
 
-// 目标 id 的常见写法：fn1 / _ftn1 / ftn-2 / note3 / endnote4 / 注5 …
-const NOTE_ID = /^[-_]?(fn|ftn|note|endnote|footnote|noteref|zhu|n|注)([-_.]?\d+)?$/i;
-const NOTE_WORD = /(note|footnote|endnote|noteref)/i;
+// 目标 id 的常见写法：fn1 / _ftn1 / ftn-2 / foot-87 / note3 / endnote4 / 注5 …
+const NOTE_ID = /^[-_]?(fn|ftn|foot|footnote|endnote|note|noteref|zhu|n|注)([-_.]?\d+)?$/i;
+// 只要 id 里含这些词并且带数字，也当作注释（如 foot-87、note_2、EndNote12）
+const NOTE_WORD = /(foot|note|endnote|noteref)/i;
 const EXTERNAL = /^(https?:|mailto:|tel:|data:|javascript:)/i;
 
 const safeDecode = (value) => {
   try { return decodeURIComponent(value); } catch (err) { return value; }
 };
 
-/** 这个链接看起来是不是指向注释 */
-export function isNoteLink(anchor, href) {
+/** 目标元素本身像不像一段注释 */
+function elementLooksLikeNote(el) {
+  if (!el) return false;
+  const type = (el.getAttribute('epub:type') || '').toLowerCase();
+  if (type.includes('note')) return true;
+
+  const tag = (el.tagName || '').toLowerCase();
+  if (tag === 'aside') return true;
+  if (el.closest && el.closest('aside')) return true;
+
+  const className = typeof el.className === 'string' ? el.className : (el.getAttribute('class') || '');
+  return NOTE_WORD.test(className);
+}
+
+/**
+ * 这个链接是不是指向注释。
+ * 优先看目标元素本身（同文件时能直接取到），取不到再退回 id 命名规则。
+ */
+export function isNoteLink(anchor, href, doc) {
   if (!href || !href.includes('#')) return false;
   if (EXTERNAL.test(href)) return false;
 
@@ -27,8 +45,18 @@ export function isNoteLink(anchor, href) {
 
   const fragment = safeDecode(href.split('#')[1] || '');
   if (!fragment) return false;
-  if (NOTE_ID.test(fragment)) return true;
 
+  // 1) 目标就在当前文档里：直接看它长得像不像注释
+  if (doc) {
+    const target = doc.getElementById(fragment);
+    if (target && elementLooksLikeNote(target)) return true;
+  }
+
+  // 2) 目标在别的文件里，或取不到：退回命名规则
+  if (NOTE_ID.test(fragment)) return true;
+  if (NOTE_WORD.test(fragment) && /\d/.test(fragment)) return true;
+
+  // 3) 链接自身的 class
   const className = typeof anchor.className === 'string' ? anchor.className : '';
   if (NOTE_WORD.test(className)) return true;
 
