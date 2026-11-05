@@ -11,12 +11,53 @@
 // 目标 id 的常见写法：fn1 / _ftn1 / ftn-2 / foot-87 / note3 / endnote4 / 注5 …
 const NOTE_ID = /^[-_]?(fn|ftn|foot|footnote|endnote|note|noteref|zhu|n|注)([-_.]?\d+)?$/i;
 // 只要 id 里含这些词并且带数字，也当作注释（如 foot-87、note_2、EndNote12）
-const NOTE_WORD = /(foot|note|endnote|noteref)/i;
+const NOTE_WORD = /(foot|note|endnote|noteref|annotation)/i;
 const EXTERNAL = /^(https?:|mailto:|tel:|data:|javascript:)/i;
 
 const safeDecode = (value) => {
   try { return decodeURIComponent(value); } catch (err) { return value; }
 };
+
+const classOf = (node) => {
+  if (!node) return '';
+  if (typeof node.className === 'string') return node.className;
+  return (node.getAttribute ? node.getAttribute('class') : '') || '';
+};
+
+/* ---- 标记文本：「42」「[42]」「〔42〕」「①」这类 ---- */
+
+// 各类括号、标点、空白都算噪音，去掉后剩下的应该只是编号
+const MARKER_NOISE = /[\s[\]()（）【】〔〕［］{}｛｝《》〈〉.．,，、:：;；\-–—~～*✻✝†‡§¶^#]/g;
+// ①-⑳、⑴-⒇、⒈-⒛、❶-❿ 等带圈数字
+const CIRCLED = /^[\u2460-\u24ff\u2776-\u2793]$/;
+
+function markerTextLooksLikeNote(raw) {
+  const text = String(raw || '').trim();
+  if (!text || text.length > 8) return false;
+
+  // 全角数字转半角
+  const normalized = text.replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0));
+  const stripped = normalized.replace(MARKER_NOISE, '');
+  if (!stripped) return false;
+
+  if (/^\d{1,4}$/.test(stripped)) return true;
+  if (stripped.length === 1 && CIRCLED.test(stripped)) return true;
+  return false;
+}
+
+/** 链接自身或它包着的元素有没有注释语义：<a><sup class="annotationtitle1">…</sup></a> */
+function anchorLooksLikeNote(anchor) {
+  if (NOTE_WORD.test(classOf(anchor))) return true;
+
+  const child = anchor.firstElementChild;
+  if (child && NOTE_WORD.test(classOf(child))) return true;
+
+  if (anchor.querySelector) {
+    const inner = anchor.querySelector('[class]');
+    if (inner && NOTE_WORD.test(classOf(inner))) return true;
+  }
+  return false;
+}
 
 /** 目标元素本身（含最近几层祖先）像不像一段注释 */
 function elementLooksLikeNote(el) {
@@ -70,13 +111,11 @@ export function isNoteLink(anchor, href, doc) {
   if (NOTE_ID.test(fragment)) return true;
   if (NOTE_WORD.test(fragment) && /\d/.test(fragment)) return true;
 
-  // 3) 链接自身的 class
-  const className = typeof anchor.className === 'string' ? anchor.className : '';
-  if (NOTE_WORD.test(className)) return true;
+  // 3) 链接自身或它包着的元素带注释语义
+  if (anchorLooksLikeNote(anchor)) return true;
 
-  // 4) 链接文字就是个短数字（「87」「[3]」这种），且指向文档内锚点 —— 最常见的脚注标记
-  const text = (anchor.textContent || '').trim();
-  if (/^[[(（【]?\d{1,4}[\])）】]?$/.test(text)) return true;
+  // 4) 链接文字是个编号标记：「87」「[3]」「〔42〕」「①」
+  if (markerTextLooksLikeNote(anchor.textContent)) return true;
 
   return false;
 }
